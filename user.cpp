@@ -10,11 +10,10 @@
 
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <sstream>
 #include <string>
 
-int fd, errcode;
-ssize_t n;
-socklen_t addrlen;  // Tamanho do endereço
 /*
 hints - Estrutura que contém informações sobre o tipo de conexão que será
 estabelecida. Podem-se considerar, literalmente, dicas para o sistema
@@ -26,8 +25,9 @@ endereço.
 */
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
-char buffer[128];  // buffer para onde serão escritos os dados recebidos do
-                   // servidor
+
+std::string uid, password;
+bool logged_in = false;
 
 int main(int argc, char** argv) {
     std::string as_ip = "localhost";
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 
     /* Cria um socket UDP (SOCK_DGRAM) para IPv4 (AF_INET).
     É devolvido um descritor de ficheiro (fd) para onde se deve comunicar. */
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1) {
         exit(1);
     }
@@ -65,13 +65,11 @@ int main(int argc, char** argv) {
     /* Busca informação do host "localhost", na porta especificada,
     guardando a informação nas `hints` e na `res`. Caso o host seja um nome
     e não um endereço IP (como é o caso), efetua um DNS Lookup. */
-    errcode =
+    int errcode =
         getaddrinfo("tejo.tecnico.ulisboa.pt", as_port.c_str(), &hints, &res);
     if (errcode != 0) {
         exit(1);
     }
-
-    std::string uid, password;
 
     while (true) {
         // char command[CMD_SIZE + 1];
@@ -80,6 +78,7 @@ int main(int argc, char** argv) {
         // }
         // std::string cmd = std::string(command);
 
+        std::cout << "> ";
         std::string cmd, msg;
         std::cin >> cmd;
 
@@ -102,53 +101,62 @@ int main(int argc, char** argv) {
             //     exit(1)
             // }
 
+            if (logged_in) {
+                std::cout << "already logged in; to login as a different user, "
+                             "please logout first"
+                          << std::endl;
+                continue;
+            }
+
             std::cin >> uid >> password;
 
             if (uid.length() != UID_SIZE ||
                 password.length() != PASSWORD_SIZE) {
                 std::cout << "invalid arguments" << std::endl;
-                exit(1);
+                continue;
             }
 
             msg = "LIN " + uid + " " + password + "\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_login_response(res);
+        } else if (cmd == "logout") {
+            msg = "LOU " + uid + " " + password + "\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_logout_response(res);
         } else if (cmd == "unregister") {
             msg = "UNR " + uid + " " + password + "\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_unregister_response(res);
+        } else if (cmd == "exit") {
+            if (logged_in) {
+                std::cout << "there's an active login, please logout first"
+                          << std::endl;
+                continue;
+            }
+
+            exit(0);
+        } else if (cmd == "myauctions" || cmd == "ma") {
+            msg = "LMA " + uid + "\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_myauctions_response(res);
+        } else if (cmd == "mybids" || cmd == "mb") {
+            msg = "LMB " + uid + "\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_mybids_response(res);
+        } else if (cmd == "list" || cmd == "l") {
+            msg = "LST\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_list_response(res);
         } else {
-            exit(1);
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            std::cout << "unknown command" << std::endl;
         }
-
-        /* Envia para o `fd` (socket) a mensagem "Hello!\n" com o tamanho 7.
-           Não são passadas flags (0), e é passado o endereço de destino.
-           É apenas aqui criada a ligação ao servidor. */
-        n = sendto(fd, msg.c_str(), msg.length(), 0, res->ai_addr,
-                   res->ai_addrlen);
-        if (n == -1) {
-            exit(1);
-        }
-
-        std::cout << "sent: " << msg;
-
-        /* Recebe 128 Bytes do servidor e guarda-os no buffer.
-           As variáveis `addr` e `addrlen` não são usadas pois não foram
-           inicializadas. */
-        addrlen = sizeof(addr);
-        n = recvfrom(fd, buffer, 128, 0, (struct sockaddr*)&addr, &addrlen);
-        if (n == -1) {
-            exit(1);
-        }
-
-        /* Imprime a mensagem "echo" e o conteúdo do buffer (ou seja, o que foi
-        recebido do servidor) para o STDOUT (fd = 1) */
-        std::string res = std::string(buffer);
-        res = res.substr(0, res.find("\n") + 1);
-        std::cout << "received: " << res;
-
-        if (res == "RLI OK\n")
-            std::cout << "successful login" << std::endl;
-        else if (res == "RLI NOK\n")
-            std::cout << "incorrect login attempt" << std::endl;
-        else if (res == "RLI REG\n")
-            std::cout << "new user registered" << std::endl;
     }
 
     /* Desaloca a memória da estrutura `res` e fecha o socket */
@@ -156,4 +164,140 @@ int main(int argc, char** argv) {
     close(fd);
 
     return 0;
+}
+
+std::string udp_request(int socket_fd, std::string& msg) {
+    /* Envia para o `fd` (socket) a mensagem "Hello!\n" com o tamanho 7.
+       Não são passadas flags (0), e é passado o endereço de destino.
+       É apenas aqui criada a ligação ao servidor. */
+    ssize_t n = sendto(socket_fd, msg.c_str(), msg.length(), 0, res->ai_addr,
+                       res->ai_addrlen);
+    if (n == -1) {
+        exit(1);
+    }
+
+    std::cout << "sent: " << msg;
+
+    /* Recebe 128 Bytes do servidor e guarda-os no buffer.
+       As variáveis `addr` e `addrlen` não são usadas pois não foram
+       inicializadas. */
+    // char buffer[128];
+    char buffer[65536];
+    socklen_t addrlen = sizeof(addr);
+    std::string res;
+
+    while (true) {
+        n = recvfrom(socket_fd, buffer, 65536, 0, (struct sockaddr*)&addr,
+                     &addrlen);
+        if (n == -1) {
+            exit(1);
+        }
+
+        std::string buffer_str = std::string(buffer);
+        if (buffer_str.find('\n') == std::string::npos) {
+            res += buffer_str;
+        } else {
+            res += buffer_str.substr(0, buffer_str.find('\n') + 1);
+            break;
+        }
+    }
+
+    std::cout << "received: " << res;
+
+    return res;
+}
+
+void handle_login_response(std::string& res) {
+    if (res == "RLI OK\n") {
+        std::cout << "successful login" << std::endl;
+        logged_in = true;
+    } else if (res == "RLI NOK\n") {
+        std::cout << "incorrect login attempt" << std::endl;
+    } else if (res == "RLI REG\n") {
+        std::cout << "new user registered" << std::endl;
+        logged_in = true;
+    } else {
+        std::cout << "ERR: unable to login" << std::endl;
+    }
+}
+
+void handle_logout_response(std::string& res) {
+    if (res == "RLO OK\n") {
+        std::cout << "successful logout" << std::endl;
+        logged_in = false;
+    } else if (res == "RLO NOK\n") {
+        std::cout << "user not logged in" << std::endl;
+    } else if (res == "RLO UNR\n") {
+        std::cout << "unknown user" << std::endl;
+    } else {
+        std::cout << "ERR: unable to logout" << std::endl;
+    }
+}
+
+void handle_unregister_response(std::string& res) {
+    if (res == "RUR OK\n") {
+        std::cout << "successful unregister" << std::endl;
+        logged_in = false;
+    } else if (res == "RUR NOK\n") {
+        std::cout << "incorrect unregister attempt" << std::endl;
+    } else if (res == "RUR UNR\n") {
+        std::cout << "unknown user" << std::endl;
+    } else {
+        std::cout << "ERR: unable to unregister" << std::endl;
+    }
+}
+
+void handle_myauctions_response(std::string& res) {
+    if (res.substr(0, res.find("OK") + 2) == "RMA OK") {
+        std::string auctions = res.substr(res.find("OK") + 3);
+        std::istringstream auctions_stream(auctions);
+
+        std::string aid, state;
+        while (auctions_stream >> aid >> state) {
+            std::cout << "auction " << aid
+                      << (state == "1" ? " (open)" : " (closed)") << std::endl;
+        }
+    } else if (res == "RMA NOK\n") {
+        std::cout << "you have no ongoing auctions" << std::endl;
+    } else if (res == "RMA NLG\n") {
+        std::cout << "user not logged in" << std::endl;
+    } else {
+        std::cout << "ERR: unable to list your auctions" << std::endl;
+    }
+}
+
+void handle_mybids_response(std::string& res) {
+    if (res.substr(0, res.find("OK") + 2) == "RMB OK") {
+        std::string auctions = res.substr(res.find("OK") + 3);
+        std::istringstream auctions_stream(auctions);
+
+        std::string aid, state;
+        while (auctions_stream >> aid >> state) {
+            std::cout << "auction " << aid
+                      << (state == "1" ? " (open)" : " (closed)") << std::endl;
+        }
+    } else if (res == "RMB NOK\n") {
+        std::cout << "you have no ongoing bids" << std::endl;
+    } else if (res == "RMB NLG\n") {
+        std::cout << "user not logged in" << std::endl;
+    } else {
+        std::cout << "ERR: unable to list your bids" << std::endl;
+    }
+}
+
+void handle_list_response(std::string& res) {
+    if (res.substr(0, res.find("OK") + 2) == "RLS OK") {
+        std::string auctions = res.substr(res.find("OK") + 3);
+        std::istringstream auctions_stream(auctions);
+
+        std::string aid, state;
+        while (auctions_stream >> aid >> state) {
+            std::cout << "auction " << aid
+                      << (state == "1" ? " (open)" : " (closed)") << std::endl;
+        }
+    } else if (res == "RLS NOK\n") {
+        std::cout << "there are no ongoing auctions" << std::endl;
+    } else {
+        std::cout << "ERR: unable to list ongoing auctions" << std::endl;
+    }
 }
