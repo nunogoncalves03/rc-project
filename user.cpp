@@ -153,6 +153,19 @@ int main(int argc, char** argv) {
 
             std::string res = udp_request(fd, msg);
             handle_list_response(res);
+        } else if (cmd == "show_record" || cmd == "sr") {
+            std::string aid;
+            std::cin >> aid;
+
+            if (aid.length() != AID_SIZE) {
+                std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
+            msg = "SRC " + aid + "\n";
+
+            std::string res = udp_request(fd, msg);
+            handle_show_record_response(res);
         } else {
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             std::cout << "unknown command" << std::endl;
@@ -297,6 +310,60 @@ void handle_list_response(std::string& res) {
         }
     } else if (res == "RLS NOK\n") {
         std::cout << "there are no ongoing auctions" << std::endl;
+    } else {
+        std::cout << "ERR: unable to list ongoing auctions" << std::endl;
+    }
+}
+
+void handle_show_record_response(std::string& res) {
+    if (res.substr(0, res.find("OK") + 2) == "RRC OK") {
+        std::string record = res.substr(res.find("OK") + 3);
+        std::istringstream record_stream(record);
+
+        std::string host_uid, auction_name, asset_fname, start_value,
+            start_date, start_time, time_active;
+        record_stream >> host_uid >> auction_name >> asset_fname >>
+            start_value >> start_date >> start_time >> time_active;
+
+        std::cout << auction_name << " - hosted by " << host_uid << std::endl;
+        std::cout << "asset filename: " << asset_fname << std::endl;
+        std::cout << "start value: " << start_value << std::endl;
+        std::cout << "started at: " << start_date << " " << start_time
+                  << std::endl;
+        std::cout << "duration: " << time_active << " seconds" << std::endl;
+
+        char next_char = record_stream.get();
+
+        if (next_char == '\n') return;
+
+        next_char = record_stream.get();
+
+        if (next_char == 'B') {
+            std::cout << std::endl;
+        }
+        while (next_char == 'B') {
+            std::string bidder_uid, bid_value, bid_date, bid_time, bid_sec_time;
+            record_stream >> bidder_uid >> bid_value >> bid_date >> bid_time >>
+                bid_sec_time;
+
+            std::cout << bid_value << " bid by user " << bidder_uid << " at "
+                      << bid_date << " " << bid_time << " (" << bid_sec_time
+                      << " seconds elapsed)" << std::endl;
+
+            next_char = record_stream.get();
+            if (next_char != '\n') next_char = record_stream.get();
+        }
+
+        if (next_char == 'E') {
+            std::string end_date, end_time, end_sec_time;
+            record_stream >> end_date >> end_time >> end_sec_time;
+
+            std::cout << "\nauction ended at " << end_date << " " << end_time
+                      << " (" << end_sec_time << " seconds elapsed)"
+                      << std::endl;
+        }
+    } else if (res == "RRC NOK\n") {
+        std::cout << "there's no auction with the given id" << std::endl;
     } else {
         std::cout << "ERR: unable to list ongoing auctions" << std::endl;
     }
