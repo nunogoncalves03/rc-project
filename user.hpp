@@ -8,6 +8,8 @@
 #define MAX_FNAME_SIZE 24
 #define MAX_FSIZE_SIZE 8
 #define MAX_ASSET_FILE_SIZE_MB 10
+#define VALUE_SIZE 6
+#define DURATION_SIZE 5
 
 #include <string>
 
@@ -25,5 +27,7 @@ void handle_list_response(std::string& res);
 void handle_show_asset_request(std::string& msg);
 void handle_bid_response(std::string& res);
 void handle_show_record_response(std::string& res);
+
+void graceful_shutdown(int code);
 
 #endif

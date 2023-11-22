@@ -1,8 +1,10 @@
 #include "user.hpp"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -17,6 +19,8 @@
 #include <string>
 #include <vector>
 
+#include "util.hpp"
+
 /*
 hints - Estrutura que contém informações sobre o tipo de conexão que será
 estabelecida. Podem-se considerar, literalmente, dicas para o sistema
@@ -27,11 +31,17 @@ res - Localização onde a função getaddrinfo() armazenará informações sobr
 endereço.
 */
 struct addrinfo hints, *res;
+int udp_fd;
 
 std::string uid, password;
 bool logged_in = false;
 
 int main(int argc, char** argv) {
+    if (signal(SIGINT, graceful_shutdown) == SIG_ERR) {
+        std::cout << "coudln't register SIGINT handler" << std::endl;
+        exit(1);
+    }
+
     std::string as_ip = "localhost";
     std::string as_port = "58058";
 
@@ -45,15 +55,21 @@ int main(int argc, char** argv) {
             i++;  // Skip the next argument
         } else {
             // Handle unknown or incorrectly formatted arguments
-            std::cerr << "Usage: " << argv[0] << " [-n ASIP] [-p ASport]"
+            std::cout << "Usage: " << argv[0] << " [-n ASIP] [-p ASport]"
                       << std::endl;
-            return 1;
+            exit(1);
         }
+    }
+
+    if (!is_number(as_port) || std::stoi(as_port) < 0 ||
+        std::stoi(as_port) > 65535) {
+        std::cout << "port has to be a number between 0 and 65535" << std::endl;
+        exit(0);
     }
 
     /* Cria um socket UDP (SOCK_DGRAM) para IPv4 (AF_INET).
     É devolvido um descritor de ficheiro (fd) para onde se deve comunicar. */
-    int udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_fd == -1) {
         exit(1);
     }
@@ -69,6 +85,7 @@ int main(int argc, char** argv) {
     e não um endereço IP (como é o caso), efetua um DNS Lookup. */
     int errcode = getaddrinfo(as_ip.c_str(), as_port.c_str(), &hints, &res);
     if (errcode != 0) {
+        std::cout << "DNS lookup failed, couldn't get host info" << std::endl;
         exit(1);
     }
 
@@ -151,7 +168,7 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            exit(0);
+            graceful_shutdown(0);
         } else if (cmd == "open") {
             std::string name, asset_fname, start_value, time_active;
             std::cin >> name >> asset_fname >> start_value >> time_active;
@@ -171,10 +188,27 @@ int main(int argc, char** argv) {
                 continue;
             }
 
+            if (start_value.length() > VALUE_SIZE) {
+                std::cout << "value can't have more than " << VALUE_SIZE
+                          << " digits" << std::endl;
+                continue;
+            }
+
+            if (time_active.length() > DURATION_SIZE) {
+                std::cout << "duration can't have more than " << DURATION_SIZE
+                          << " digits" << std::endl;
+                continue;
+            }
+
             struct stat stat_buffer;
             if (stat(asset_fname.c_str(), &stat_buffer) == -1) {
-                // pathname does not exist
-                exit(1);
+                if (errno == ENOENT) {
+                    // pathname does not exist
+                    std::cout << "file " << asset_fname << " doesn't exist"
+                              << std::endl;
+                    continue;
+                }
+                graceful_shutdown(1);
             }
             size_t fsize = (size_t)stat_buffer.st_size;
             if (fsize > MAX_ASSET_FILE_SIZE_MB * 1000000) {
@@ -185,7 +219,8 @@ int main(int argc, char** argv) {
 
             std::ifstream asset_file(asset_fname);
             if (!asset_file.is_open()) {
-                exit(1);
+                std::cout << "couldn't open file " << asset_fname << std::endl;
+                graceful_shutdown(1);
             }
 
             std::vector<char> fdata(fsize);
@@ -273,6 +308,12 @@ int main(int argc, char** argv) {
                 continue;
             }
 
+            if (value.length() != VALUE_SIZE) {
+                std::cout << "value can't have more than " << VALUE_SIZE
+                          << " digits" << std::endl;
+                continue;
+            }
+
             msg =
                 "BID " + uid + " " + password + " " + aid + " " + value + "\n";
 
@@ -298,8 +339,7 @@ int main(int argc, char** argv) {
     }
 
     /* Desaloca a memória da estrutura `res` e fecha o socket */
-    freeaddrinfo(res);
-    close(udp_fd);
+    graceful_shutdown(0);
 
     return 0;
 }
@@ -311,7 +351,7 @@ std::string udp_request(int socket_fd, std::string& msg) {
     ssize_t n = sendto(socket_fd, msg.c_str(), msg.length(), 0, res->ai_addr,
                        res->ai_addrlen);
     if (n == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
 
     std::cout << "sent: " << msg;
@@ -326,7 +366,7 @@ std::string udp_request(int socket_fd, std::string& msg) {
     while (true) {
         n = recvfrom(socket_fd, buffer, 65536, 0, NULL, NULL);
         if (n == -1) {
-            exit(1);
+            graceful_shutdown(1);
         }
 
         std::string buffer_str = std::string(buffer);
@@ -346,7 +386,7 @@ std::string udp_request(int socket_fd, std::string& msg) {
 std::string tcp_request(std::string& msg) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
 
     /* Em TCP é necessário estabelecer uma ligação com o servidor primeiro
@@ -354,14 +394,14 @@ std::string tcp_request(std::string& msg) {
        de `getaddrinfo()`. */
     ssize_t n = connect(fd, res->ai_addr, res->ai_addrlen);
     if (n == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
 
     /* Escreve a mensagem "Hello!\n" para o servidor, especificando o seu
      * tamanho */
     n = write(fd, msg.c_str(), msg.length());
     if (n == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
     std::cout << "sent: " << msg;
 
@@ -371,7 +411,7 @@ std::string tcp_request(std::string& msg) {
     while (true) {
         n = read(fd, buffer, 128);
         if (n == -1) {
-            exit(1);
+            graceful_shutdown(1);
         }
 
         std::string buffer_str = std::string(buffer);
@@ -524,7 +564,7 @@ void handle_list_response(std::string& res) {
 void handle_show_asset_request(std::string& msg) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
 
     /* Em TCP é necessário estabelecer uma ligação com o servidor primeiro
@@ -532,14 +572,14 @@ void handle_show_asset_request(std::string& msg) {
        de `getaddrinfo()`. */
     ssize_t n = connect(fd, res->ai_addr, res->ai_addrlen);
     if (n == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
 
     /* Escreve a mensagem "Hello!\n" para o servidor, especificando o seu
      * tamanho */
     n = write(fd, msg.c_str(), msg.length());
     if (n == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
     std::cout << "sent: " << msg;
 
@@ -547,7 +587,7 @@ void handle_show_asset_request(std::string& msg) {
 
     n = read(fd, res_status_buffer, 7);
     if (n == -1) {
-        exit(1);
+        graceful_shutdown(1);
     }
 
     std::string res = std::string(res_status_buffer);
@@ -559,7 +599,7 @@ void handle_show_asset_request(std::string& msg) {
 
         n = read(fd, file_info_buffer, sizeof(file_info_buffer));
         if (n == -1) {
-            exit(1);
+            graceful_shutdown(1);
         }
 
         std::string fname, fsize;
@@ -582,7 +622,8 @@ void handle_show_asset_request(std::string& msg) {
 
         std::ofstream asset_file(fname);
         if (!asset_file.is_open()) {
-            exit(1);
+            std::cout << "couldn't create file " << fname << std::endl;
+            graceful_shutdown(1);
         }
         asset_file.write(fdata_portion, sizeof(fdata_portion));
 
@@ -591,7 +632,7 @@ void handle_show_asset_request(std::string& msg) {
         while (nleft > 0) {
             n = read(fd, fdata_buffer, 512);
             if (n == -1) {
-                exit(1);
+                graceful_shutdown(1);
             }
 
             size_t n_to_write = nleft < n ? nleft : n;
@@ -680,4 +721,12 @@ void handle_show_record_response(std::string& res) {
     } else {
         std::cout << "ERR: unable to list ongoing auctions" << std::endl;
     }
+}
+
+void graceful_shutdown(int code) {
+    freeaddrinfo(res);
+    close(udp_fd);
+
+    std::cout << std::endl;
+    exit(code == SIGINT ? 0 : code);
 }
