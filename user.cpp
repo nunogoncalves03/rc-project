@@ -613,7 +613,7 @@ void handle_show_asset_request(std::string& msg) {
 }
 
 void handle_bid_response(std::string& res) {
-    if (res == "RBD ACC") {
+    if (res == "RBD ACC\n") {
         std::cout << "bid registered successfully" << std::endl;
     } else if (res == "RBD REF\n") {
         std::cout << "there's already been placed a higher bid" << std::endl;
