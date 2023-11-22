@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 
             msg = "LIN " + temp_uid + " " + temp_password + "\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, LOGIN_RES_SIZE);
             handle_login_response(res, temp_uid, temp_password);
         } else if (cmd == "logout") {
             if (uid == "") {
@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
 
             msg = "LOU " + uid + " " + password + "\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, LOGOUT_RES_SIZE);
             handle_logout_response(res);
         } else if (cmd == "unregister") {
             if (uid == "") {
@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
 
             msg = "UNR " + uid + " " + password + "\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, UNREGISTER_RES_SIZE);
             handle_unregister_response(res);
         } else if (cmd == "exit") {
             if (logged_in) {
@@ -263,7 +263,7 @@ int main(int argc, char** argv) {
 
             msg = "LMA " + uid + "\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, MYAUCTIONS_RES_SIZE);
             handle_myauctions_response(res);
         } else if (cmd == "mybids" || cmd == "mb") {
             if (uid == "") {
@@ -274,12 +274,12 @@ int main(int argc, char** argv) {
 
             msg = "LMB " + uid + "\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, MYBIDS_RES_SIZE);
             handle_mybids_response(res);
         } else if (cmd == "list" || cmd == "l") {
             msg = "LST\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, LIST_RES_SIZE);
             handle_list_response(res);
         } else if (cmd == "show_asset" || cmd == "sa") {
             std::string aid;
@@ -330,7 +330,7 @@ int main(int argc, char** argv) {
 
             msg = "SRC " + aid + "\n";
 
-            std::string res = udp_request(udp_fd, msg);
+            std::string res = udp_request(udp_fd, msg, SHOWRECORD_RES_SIZE);
             handle_show_record_response(res);
         } else {
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-std::string udp_request(int socket_fd, std::string& msg) {
+std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
     /* Envia para o `fd` (socket) a mensagem "Hello!\n" com o tamanho 7.
        Não são passadas flags (0), e é passado o endereço de destino.
        É apenas aqui criada a ligação ao servidor. */
@@ -360,23 +360,15 @@ std::string udp_request(int socket_fd, std::string& msg) {
        As variáveis `addr` e `addrlen` não são usadas pois não foram
        inicializadas. */
     // char buffer[128];
-    char buffer[65536];
-    std::string res;
+    char buffer[res_max_size];
 
-    while (true) {
-        n = recvfrom(socket_fd, buffer, 65536, 0, NULL, NULL);
-        if (n == -1) {
-            graceful_shutdown(1);
-        }
-
-        std::string buffer_str = std::string(buffer);
-        if (buffer_str.find('\n') == std::string::npos) {
-            res += buffer_str;
-        } else {
-            res += buffer_str.substr(0, buffer_str.find('\n') + 1);
-            break;
-        }
+    n = recvfrom(socket_fd, buffer, res_max_size, 0, NULL, NULL);
+    if (n == -1) {
+        graceful_shutdown(1);
     }
+
+    std::string buffer_str = std::string(buffer);
+    std::string res = buffer_str.substr(0, buffer_str.find('\n') + 1);
 
     std::cout << "received: " << res;
 
