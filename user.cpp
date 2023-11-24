@@ -21,6 +21,19 @@
 
 #include "util.hpp"
 
+template <typename... Args>
+bool read_from_terminal(Args&&... args) {
+    std::string line, rest;
+    std::getline(std::cin, line, '\n');
+    std::istringstream stream(line);
+
+    auto read_arg = [&stream](auto&& arg) { stream >> arg; };
+    (read_arg(args), ...);
+
+    stream >> rest;
+    return rest.length() != 0;
+}
+
 /*
 hints - Estrutura que contém informações sobre o tipo de conexão que será
 estabelecida. Podem-se considerar, literalmente, dicas para o sistema
@@ -90,37 +103,13 @@ int main(int argc, char** argv) {
     }
 
     while (true) {
-        // char command[CMD_SIZE + 1];
-        // if (fgets(command, CMD_SIZE + 1, STDIN_FILENO) == NULL) {
-        //     exit(-1);
-        // }
-        // std::string cmd = std::string(command);
-
         std::cout << "> ";
         std::string cmd, msg;
         std::cin >> cmd;
 
         if (cmd == "login") {
-            // char buffer[CMD_SIZE + UID_SIZE + PASSWORD_SIZE + 3];
-            // memcpy(buffer, command, CMD_SIZE);
-            // buffer[CMD_SIZE] = ' ';
-
-            // if (getchar() != ' ') {
-            //     exit(1);
-            // }
-
-            // if (fgets(buffer + CMD_SIZE + 1, UID_SIZE + 1, STDIN_FILENO) ==
-            // NULL) {
-            //     exit(1);
-            // }
-
-            // if (fgets(buffer + CMD_SIZE + UID_SIZE + 2, PASSWORD_SIZE + 1,
-            // STDIN_FILENO) == NULL) {
-            //     exit(1)
-            // }
-
             std::string temp_uid, temp_password;
-            std::cin >> temp_uid >> temp_password;
+            bool left_over_chars = read_from_terminal(temp_uid, temp_password);
 
             if (logged_in) {
                 std::cout << "already logged in; to login as a different user, "
@@ -129,9 +118,21 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            if (temp_uid.length() != UID_SIZE ||
-                temp_password.length() != PASSWORD_SIZE) {
+            if (left_over_chars || temp_uid == "" || temp_password == "") {
                 std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
+            if (!is_number(temp_uid) || temp_uid.length() != UID_SIZE) {
+                std::cout << "uid has to be a number with " << UID_SIZE
+                          << " digits" << std::endl;
+                continue;
+            }
+
+            if (!is_alphanumerical(temp_password) ||
+                temp_password.length() != PASSWORD_SIZE) {
+                std::cout << "password needs to have " << PASSWORD_SIZE
+                          << " alphanumerical characters" << std::endl;
                 continue;
             }
 
@@ -140,9 +141,16 @@ int main(int argc, char** argv) {
             std::string res = udp_request(udp_fd, msg, LOGIN_RES_SIZE);
             handle_login_response(res, temp_uid, temp_password);
         } else if (cmd == "logout") {
+            const bool left_over_chars = read_from_terminal();
+
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
                           << std::endl;
+                continue;
+            }
+
+            if (left_over_chars) {
+                std::cout << "invalid arguments" << std::endl;
                 continue;
             }
 
@@ -151,9 +159,16 @@ int main(int argc, char** argv) {
             std::string res = udp_request(udp_fd, msg, LOGOUT_RES_SIZE);
             handle_logout_response(res);
         } else if (cmd == "unregister") {
+            const bool left_over_chars = read_from_terminal();
+
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
                           << std::endl;
+                continue;
+            }
+
+            if (left_over_chars) {
+                std::cout << "invalid arguments" << std::endl;
                 continue;
             }
 
@@ -162,20 +177,40 @@ int main(int argc, char** argv) {
             std::string res = udp_request(udp_fd, msg, UNREGISTER_RES_SIZE);
             handle_unregister_response(res);
         } else if (cmd == "exit") {
+            const bool left_over_chars = read_from_terminal();
+
             if (logged_in) {
                 std::cout << "there's an active login, please logout first"
                           << std::endl;
                 continue;
             }
 
+            if (left_over_chars) {
+                std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
             graceful_shutdown(0);
         } else if (cmd == "open") {
             std::string name, asset_fname, start_value, time_active;
-            std::cin >> name >> asset_fname >> start_value >> time_active;
+            const bool left_over_chars =
+                read_from_terminal(name, asset_fname, start_value, time_active);
 
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
                           << std::endl;
+                continue;
+            }
+
+            if (left_over_chars || name == "" || asset_fname == "" ||
+                start_value == "" || time_active == "") {
+                std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
+            if (!is_alphanumerical(name) || name.length() > AUCTION_NAME_SIZE) {
+                std::cout << "name can only contain up to " << AUCTION_NAME_SIZE
+                          << " alphanumerical characters" << std::endl;
                 continue;
             }
 
@@ -188,15 +223,16 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            if (start_value.length() > VALUE_SIZE) {
-                std::cout << "value can't have more than " << VALUE_SIZE
-                          << " digits" << std::endl;
+            if (!is_number(start_value) || start_value.length() > VALUE_SIZE) {
+                std::cout << "start_value has to be a number with "
+                          << VALUE_SIZE << " digits maximum" << std::endl;
                 continue;
             }
 
-            if (time_active.length() > DURATION_SIZE) {
-                std::cout << "duration can't have more than " << DURATION_SIZE
-                          << " digits" << std::endl;
+            if (!is_number(time_active) ||
+                time_active.length() > DURATION_SIZE) {
+                std::cout << "time_active has to be a number with "
+                          << DURATION_SIZE << " digits maximum" << std::endl;
                 continue;
             }
 
@@ -237,7 +273,7 @@ int main(int argc, char** argv) {
             handle_open_response(res);
         } else if (cmd == "close") {
             std::string aid;
-            std::cin >> aid;
+            const bool left_over_chars = read_from_terminal(aid);
 
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
@@ -245,8 +281,14 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            if (aid.length() != AID_SIZE) {
+            if (left_over_chars || aid == "") {
                 std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
+            if (!is_number(aid) || aid.length() != AID_SIZE) {
+                std::cout << "aid has to be a number with " << AID_SIZE
+                          << " digits" << std::endl;
                 continue;
             }
 
@@ -255,9 +297,16 @@ int main(int argc, char** argv) {
             std::string res = tcp_request(msg);
             handle_close_response(res);
         } else if (cmd == "myauctions" || cmd == "ma") {
+            const bool left_over_chars = read_from_terminal();
+
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
                           << std::endl;
+                continue;
+            }
+
+            if (left_over_chars) {
+                std::cout << "invalid arguments" << std::endl;
                 continue;
             }
 
@@ -266,9 +315,16 @@ int main(int argc, char** argv) {
             std::string res = udp_request(udp_fd, msg, MYAUCTIONS_RES_SIZE);
             handle_myauctions_response(res);
         } else if (cmd == "mybids" || cmd == "mb") {
+            const bool left_over_chars = read_from_terminal();
+
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
                           << std::endl;
+                continue;
+            }
+
+            if (left_over_chars) {
+                std::cout << "invalid arguments" << std::endl;
                 continue;
             }
 
@@ -277,16 +333,29 @@ int main(int argc, char** argv) {
             std::string res = udp_request(udp_fd, msg, MYBIDS_RES_SIZE);
             handle_mybids_response(res);
         } else if (cmd == "list" || cmd == "l") {
+            const bool left_over_chars = read_from_terminal();
+
+            if (left_over_chars) {
+                std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
             msg = "LST\n";
 
             std::string res = udp_request(udp_fd, msg, LIST_RES_SIZE);
             handle_list_response(res);
         } else if (cmd == "show_asset" || cmd == "sa") {
             std::string aid;
-            std::cin >> aid;
+            const bool left_over_chars = read_from_terminal(aid);
 
-            if (aid.length() != AID_SIZE) {
+            if (left_over_chars || aid == "") {
                 std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
+            if (!is_number(aid) || aid.length() != AID_SIZE) {
+                std::cout << "aid has to be a number with " << AID_SIZE
+                          << " digits" << std::endl;
                 continue;
             }
 
@@ -295,7 +364,7 @@ int main(int argc, char** argv) {
             handle_show_asset_request(msg);
         } else if (cmd == "bid" || cmd == "b") {
             std::string aid, value;
-            std::cin >> aid >> value;
+            const bool left_over_chars = read_from_terminal(aid, value);
 
             if (uid == "") {
                 std::cout << "you need to perform a successful login first"
@@ -303,14 +372,20 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            if (aid.length() != AID_SIZE) {
+            if (left_over_chars || aid == "" || value == "") {
                 std::cout << "invalid arguments" << std::endl;
                 continue;
             }
 
-            if (value.length() != VALUE_SIZE) {
-                std::cout << "value can't have more than " << VALUE_SIZE
+            if (!is_number(aid) || aid.length() != AID_SIZE) {
+                std::cout << "aid has to be a number with " << AID_SIZE
                           << " digits" << std::endl;
+                continue;
+            }
+
+            if (!is_number(value) || value.length() > VALUE_SIZE) {
+                std::cout << "value has to be a number with " << VALUE_SIZE
+                          << " digits maximum" << std::endl;
                 continue;
             }
 
@@ -321,10 +396,16 @@ int main(int argc, char** argv) {
             handle_bid_response(res);
         } else if (cmd == "show_record" || cmd == "sr") {
             std::string aid;
-            std::cin >> aid;
+            const bool left_over_chars = read_from_terminal(aid);
 
-            if (aid.length() != AID_SIZE) {
+            if (left_over_chars || aid == "") {
                 std::cout << "invalid arguments" << std::endl;
+                continue;
+            }
+
+            if (!is_number(aid) || aid.length() != AID_SIZE) {
+                std::cout << "aid has to be a number with " << AID_SIZE
+                          << " digits" << std::endl;
                 continue;
             }
 
