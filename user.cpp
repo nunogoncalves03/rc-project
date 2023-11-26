@@ -617,7 +617,7 @@ void handle_myauctions_response(std::string& res) {
             state = "";
         }
 
-        if (aid != "" || state != "" || auctions_stream.get() != '\n') {
+        if (aid != "" || state != "") {
             std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     } else if (res == "RMA NOK\n") {
@@ -653,7 +653,7 @@ void handle_mybids_response(std::string& res) {
             state = "";
         }
 
-        if (aid != "" || state != "" || auctions_stream.get() != '\n') {
+        if (aid != "" || state != "") {
             std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     } else if (res == "RMB NOK\n") {
@@ -689,7 +689,7 @@ void handle_list_response(std::string& res) {
             state = "";
         }
 
-        if (aid != "" || state != "" || auctions_stream.get() != '\n') {
+        if (aid != "" || state != "") {
             std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     } else if (res == "RLS NOK\n") {
@@ -829,6 +829,18 @@ void handle_show_record_response(std::string& res) {
         record_stream >> host_uid >> auction_name >> asset_fname >>
             start_value >> start_date >> start_time >> time_active;
 
+        if (!is_number(host_uid) || host_uid.length() != UID_SIZE ||
+            !is_alphanumerical(auction_name) ||
+            auction_name.length() > AUCTION_NAME_SIZE ||
+            !is_valid_filename(asset_fname) || !is_number(start_value) ||
+            start_value.length() > VALUE_SIZE ||
+            start_date.length() != DATE_SIZE ||
+            start_time.length() != TIME_SIZE || !is_number(time_active) ||
+            time_active.length() > DURATION_SIZE) {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
         std::cout << auction_name << " - hosted by " << host_uid << std::endl;
         std::cout << "asset filename: " << asset_fname << std::endl;
         std::cout << "start value: " << start_value << std::endl;
@@ -840,7 +852,17 @@ void handle_show_record_response(std::string& res) {
 
         if (next_char == '\n') return;
 
+        if (next_char != ' ') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
         next_char = record_stream.get();
+
+        if (next_char != 'B' && next_char != 'E') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
 
         if (next_char == 'B') {
             std::cout << std::endl;
@@ -850,21 +872,57 @@ void handle_show_record_response(std::string& res) {
             record_stream >> bidder_uid >> bid_value >> bid_date >> bid_time >>
                 bid_sec_time;
 
+            if (!is_number(bidder_uid) || bidder_uid.length() != UID_SIZE ||
+                !is_number(bid_value) || bid_value.length() > VALUE_SIZE ||
+                bid_date.length() != DATE_SIZE ||
+                bid_time.length() != TIME_SIZE || !is_number(bid_sec_time) ||
+                bid_sec_time.length() > DURATION_SIZE) {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+
             std::cout << bid_value << " bid by user " << bidder_uid << " at "
                       << bid_date << " " << bid_time << " (" << bid_sec_time
                       << " seconds elapsed)" << std::endl;
 
             next_char = record_stream.get();
-            if (next_char != '\n') next_char = record_stream.get();
+            if (next_char == ' ') {
+                next_char = record_stream.get();
+                if (next_char != 'B' && next_char != 'E') {
+                    std::cout << "ERROR: unexpected response from server"
+                              << std::endl;
+                    return;
+                }
+            } else if (next_char != '\n') {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
         }
 
         if (next_char == 'E') {
             std::string end_date, end_time, end_sec_time;
             record_stream >> end_date >> end_time >> end_sec_time;
 
+            if (end_date.length() != DATE_SIZE ||
+                end_time.length() != TIME_SIZE || !is_number(end_sec_time) ||
+                end_sec_time.length() > DURATION_SIZE) {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+
             std::cout << "\nauction ended at " << end_date << " " << end_time
                       << " (" << end_sec_time << " seconds elapsed)"
                       << std::endl;
+
+            next_char = record_stream.get();
+        }
+
+        if (next_char != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
         }
     } else if (res == "RRC NOK\n") {
         std::cout << "there's no auction with the given id" << std::endl;

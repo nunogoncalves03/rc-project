@@ -9,6 +9,8 @@
 #define AID_SIZE 3
 #define AUCTION_NAME_SIZE 10
 #define DATE_TIME_SIZE 19
+#define DATE_SIZE 10
+#define TIME_SIZE 8
 #define MAX_FNAME_SIZE 24
 #define MAX_FSIZE_SIZE 8
 #define MAX_ASSET_FILE_SIZE_MB 10
