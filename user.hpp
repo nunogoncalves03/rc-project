@@ -14,6 +14,7 @@
 #define MAX_ASSET_FILE_SIZE_MB 10
 #define VALUE_SIZE 6
 #define DURATION_SIZE 5
+#define STATE_SIZE 1
 
 // Responses maximum sizes
 #define LOGIN_RES_SIZE (CMD_SIZE + 1 + 3 + 1)
@@ -21,7 +22,7 @@
 #define UNREGISTER_RES_SIZE (CMD_SIZE + 1 + 3 + 1)
 #define MYAUCTIONS_RES_SIZE \
     (CMD_SIZE + 1 + 2 + 999 * (1 + AID_SIZE + 1 + 1) + 1)
-#define MYBIDS_RES_SIZE (CMD_SIZE + 1 + 2 + 50 * (1 + AID_SIZE + 1 + 1) + 1)
+#define MYBIDS_RES_SIZE (CMD_SIZE + 1 + 2 + 999 * (1 + AID_SIZE + 1 + 1) + 1)
 #define LIST_RES_SIZE (CMD_SIZE + 1 + 2 + 999 * (1 + AID_SIZE + 1 + 1) + 1)
 #define SHOWRECORD_RES_SIZE                                                    \
     (CMD_SIZE + 1 + 2 + 1 +                                                    \

@@ -214,11 +214,7 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            size_t idx = asset_fname.find('.');
-            if (idx == std::string::npos ||
-                asset_fname.substr(0, idx).length() <= 0 ||
-                asset_fname.substr(0, idx).length() > 20 ||
-                asset_fname.substr(idx + 1).length() != 3) {
+            if (!is_valid_filename(asset_fname)) {
                 std::cout << "invalid filename" << std::endl;
                 continue;
             }
@@ -519,8 +515,10 @@ void handle_login_response(std::string& res, std::string& uid_,
         logged_in = true;
         uid = uid_;
         password = password_;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to login" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -532,8 +530,10 @@ void handle_logout_response(std::string& res) {
         std::cout << "user not logged in" << std::endl;
     } else if (res == "RLO UNR\n") {
         std::cout << "unknown user" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to logout" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -545,21 +545,36 @@ void handle_unregister_response(std::string& res) {
         std::cout << "incorrect unregister attempt" << std::endl;
     } else if (res == "RUR UNR\n") {
         std::cout << "unknown user" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to unregister" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
 void handle_open_response(std::string& res) {
     if (res.substr(0, res.find("OK") + 2) == "ROA OK") {
-        std::string aid = res.substr(res.find("OK") + 3, 3);
+        std::string rest = res.substr(res.find("OK") + 3);
+        std::istringstream stream(rest);
+
+        std::string aid;
+        stream >> aid;
+
+        if (!is_number(aid) || aid.length() != AID_SIZE ||
+            stream.get() != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
         std::cout << "auction successfully opened with ID " << aid << std::endl;
     } else if (res == "ROA NOK\n") {
         std::cout << "couldn't start auction" << std::endl;
     } else if (res == "ROA NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to open a new auction" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -574,8 +589,10 @@ void handle_close_response(std::string& res) {
         std::cout << "auction is already closed" << std::endl;
     } else if (res == "RCL NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to close the auction" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -586,15 +603,31 @@ void handle_myauctions_response(std::string& res) {
 
         std::string aid, state;
         while (auctions_stream >> aid >> state) {
+            if (!is_number(aid) || aid.length() != AID_SIZE ||
+                !is_number(state) || state.length() != STATE_SIZE ||
+                !(state == "0" || state == "1")) {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+
             std::cout << "auction " << aid
                       << (state == "1" ? " (open)" : " (closed)") << std::endl;
+            aid = "";
+            state = "";
+        }
+
+        if (aid != "" || state != "" || auctions_stream.get() != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     } else if (res == "RMA NOK\n") {
         std::cout << "you have no ongoing auctions" << std::endl;
     } else if (res == "RMA NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to list your auctions" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -605,15 +638,32 @@ void handle_mybids_response(std::string& res) {
 
         std::string aid, state;
         while (auctions_stream >> aid >> state) {
+            if (!is_number(aid) || aid.length() != AID_SIZE ||
+                !is_number(state) || state.length() != STATE_SIZE ||
+                !(state == "0" || state == "1")) {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+
             std::cout << "auction " << aid
                       << (state == "1" ? " (open)" : " (closed)") << std::endl;
+
+            aid = "";
+            state = "";
+        }
+
+        if (aid != "" || state != "" || auctions_stream.get() != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     } else if (res == "RMB NOK\n") {
         std::cout << "you have no ongoing bids" << std::endl;
     } else if (res == "RMB NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to list your bids" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -624,13 +674,30 @@ void handle_list_response(std::string& res) {
 
         std::string aid, state;
         while (auctions_stream >> aid >> state) {
+            if (!is_number(aid) || aid.length() != AID_SIZE ||
+                !is_number(state) || state.length() != STATE_SIZE ||
+                !(state == "0" || state == "1")) {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+
             std::cout << "auction " << aid
                       << (state == "1" ? " (open)" : " (closed)") << std::endl;
+
+            aid = "";
+            state = "";
+        }
+
+        if (aid != "" || state != "" || auctions_stream.get() != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     } else if (res == "RLS NOK\n") {
         std::cout << "there are no ongoing auctions" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to list ongoing auctions" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -682,6 +749,12 @@ void handle_show_asset_request(std::string& msg) {
         file_info_stream >> fname >> fsize;
         std::cout << fname << " " << fsize << std::endl;
 
+        if (!is_valid_filename(fname) || !is_number(fsize) ||
+            fsize.length() > MAX_FSIZE_SIZE) {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
         int fdata_idx = fsize.length() + fname.length() + 2;
         size_t fdata_portion_size;
         if (sizeof(file_info_buffer) - fdata_idx >= std::stoi(fsize)) {
@@ -721,8 +794,10 @@ void handle_show_asset_request(std::string& msg) {
         std::cout << "there's no file associated with the auction or some "
                      "internal error occurred"
                   << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to download the asset" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -737,8 +812,10 @@ void handle_bid_response(std::string& res) {
         std::cout << "user not logged in" << std::endl;
     } else if (res == "RBD ILG\n") {
         std::cout << "you can't bid on your own auction" << std::endl;
-    } else {
+    } else if (res == "ERR\n") {
         std::cout << "ERR: unable to bid" << std::endl;
+    } else {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -791,8 +868,10 @@ void handle_show_record_response(std::string& res) {
         }
     } else if (res == "RRC NOK\n") {
         std::cout << "there's no auction with the given id" << std::endl;
+    } else if (res == "ERR\n") {
+        std::cout << "ERR: unable to show the record" << std::endl;
     } else {
-        std::cout << "ERR: unable to list ongoing auctions" << std::endl;
+        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
