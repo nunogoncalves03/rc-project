@@ -3,6 +3,8 @@
 
 #include <string>
 
+#define MB_N_BYTES 1000000
+
 #define CMD_SIZE 3
 #define UID_SIZE 6
 #define PASSWORD_SIZE 8

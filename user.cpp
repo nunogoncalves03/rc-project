@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -21,6 +22,14 @@
 
 #include "util.hpp"
 
+/**
+ * @brief reads formatted input from terminal and stores it into the given
+ * arguments
+ *
+ * @tparam Args any
+ * @param args variables where to store the input
+ * @return bool - whether there were leftover characters in the terminal
+ */
 template <typename... Args>
 bool read_from_terminal(Args&&... args) {
     std::string line, rest;
@@ -34,22 +43,15 @@ bool read_from_terminal(Args&&... args) {
     return rest.length() != 0;
 }
 
-/*
-hints - Estrutura que contém informações sobre o tipo de conexão que será
-estabelecida. Podem-se considerar, literalmente, dicas para o sistema
-operacional sobre como deve ser feita a conexão, de forma a facilitar a
-aquisição ou preencher dados.
-
-res - Localização onde a função getaddrinfo() armazenará informações sobre o
-endereço.
-*/
 struct addrinfo hints, *res;
 int udp_fd;
 
+// User credentials
 std::string uid, password;
 bool logged_in = false;
 
 int main(int argc, char** argv) {
+    // signal to handle CTRL+C (SIGINT) and gracefully shutdown
     if (signal(SIGINT, graceful_shutdown) == SIG_ERR) {
         std::cout << "coudln't register SIGINT handler" << std::endl;
         exit(1);
@@ -80,28 +82,36 @@ int main(int argc, char** argv) {
         exit(0);
     }
 
-    /* Cria um socket UDP (SOCK_DGRAM) para IPv4 (AF_INET).
-    É devolvido um descritor de ficheiro (fd) para onde se deve comunicar. */
+    // Global UDP socket
     udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_fd == -1) {
         exit(1);
     }
 
-    /* Preenche a estrutura com 0s e depois atribui a informação já conhecida da
-     * ligação */
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+
+    // Set socket timeout for both reads and writes
+    if (setsockopt(udp_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) <
+            0 ||
+        setsockopt(udp_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) <
+            0) {
+        exit(1);
+    }
+
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;  // IPv4
-    hints.ai_socktype = 0;      // socket of any type
+    hints.ai_socktype = 0;      // Socket of any type
 
-    /* Busca informação do host "localhost", na porta especificada,
-    guardando a informação nas `hints` e na `res`. Caso o host seja um nome
-    e não um endereço IP (como é o caso), efetua um DNS Lookup. */
+    // DNS lookup
     int errcode = getaddrinfo(as_ip.c_str(), as_port.c_str(), &hints, &res);
     if (errcode != 0) {
         std::cout << "DNS lookup failed, couldn't get host info" << std::endl;
         exit(1);
     }
 
+    // Loop reading commands from user
     while (true) {
         std::cout << "> ";
         std::string cmd, msg;
@@ -109,7 +119,8 @@ int main(int argc, char** argv) {
 
         if (cmd == "login") {
             std::string temp_uid, temp_password;
-            bool left_over_chars = read_from_terminal(temp_uid, temp_password);
+            const bool left_over_chars =
+                read_from_terminal(temp_uid, temp_password);
 
             if (logged_in) {
                 std::cout << "already logged in; to login as a different user, "
@@ -214,7 +225,9 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            if (!is_valid_filename(asset_fname)) {
+            std::filesystem::path asset_path(asset_fname);
+            std::string asset_base_name = asset_path.filename().string();
+            if (!is_valid_filename(asset_base_name)) {
                 std::cout << "invalid filename" << std::endl;
                 continue;
             }
@@ -243,7 +256,7 @@ int main(int argc, char** argv) {
                 graceful_shutdown(1);
             }
             size_t fsize = (size_t)stat_buffer.st_size;
-            if (fsize > MAX_ASSET_FILE_SIZE_MB * 1000000) {
+            if (fsize > MAX_ASSET_FILE_SIZE_MB * MB_N_BYTES) {
                 std::cout << "file too big, limit is " << MAX_ASSET_FILE_SIZE_MB
                           << " MB" << std::endl;
                 continue;
@@ -260,7 +273,8 @@ int main(int argc, char** argv) {
 
             std::string msg = "OPA " + uid + " " + password + " " + name + " " +
                               start_value + " " + time_active + " " +
-                              asset_fname + " " + std::to_string(fsize) + " ";
+                              asset_base_name + " " + std::to_string(fsize) +
+                              " ";
 
             msg.insert(msg.end(), fdata.begin(), fdata.end());
             msg += "\n";
@@ -415,16 +429,12 @@ int main(int argc, char** argv) {
         }
     }
 
-    /* Desaloca a memória da estrutura `res` e fecha o socket */
     graceful_shutdown(0);
 
     return 0;
 }
 
 std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
-    /* Envia para o `fd` (socket) a mensagem "Hello!\n" com o tamanho 7.
-       Não são passadas flags (0), e é passado o endereço de destino.
-       É apenas aqui criada a ligação ao servidor. */
     ssize_t n = sendto(socket_fd, msg.c_str(), msg.length(), 0, res->ai_addr,
                        res->ai_addrlen);
     if (n == -1) {
@@ -433,18 +443,13 @@ std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
 
     std::cout << "sent: " << msg;
 
-    /* Recebe 128 Bytes do servidor e guarda-os no buffer.
-       As variáveis `addr` e `addrlen` não são usadas pois não foram
-       inicializadas. */
-    // char buffer[128];
     char buffer[res_max_size];
-
     n = recvfrom(socket_fd, buffer, res_max_size, 0, NULL, NULL);
     if (n == -1) {
         graceful_shutdown(1);
     }
 
-    std::string buffer_str = std::string(buffer);
+    std::string buffer_str = std::string(buffer, n);
     std::string res = buffer_str.substr(0, buffer_str.find('\n') + 1);
 
     std::cout << "received: " << res;
@@ -458,32 +463,39 @@ std::string tcp_request(std::string& msg) {
         graceful_shutdown(1);
     }
 
-    /* Em TCP é necessário estabelecer uma ligação com o servidor primeiro
-       (Handshake). Então primeiro cria a conexão para o endereço obtido através
-       de `getaddrinfo()`. */
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+
+    // Set socket timeout for both reads and writes
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
+        exit(1);
+    }
+
     ssize_t n = connect(fd, res->ai_addr, res->ai_addrlen);
     if (n == -1) {
         graceful_shutdown(1);
     }
 
-    /* Escreve a mensagem "Hello!\n" para o servidor, especificando o seu
-     * tamanho */
     n = write(fd, msg.c_str(), msg.length());
     if (n == -1) {
         graceful_shutdown(1);
     }
+
     std::cout << "sent: " << msg;
 
     char buffer[128];
     std::string res;
-    /* Lê 128 Bytes do servidor e guarda-os no buffer. */
+    // Reads from the socket in 128 Bytes chunks
     while (true) {
         n = read(fd, buffer, 128);
         if (n == -1) {
             graceful_shutdown(1);
         }
 
-        std::string buffer_str = std::string(buffer);
+        std::string buffer_str = std::string(buffer, n);
+        // Check if the response has ended, that is, if the '\n' char is present
         if (buffer_str.find('\n') == std::string::npos) {
             res += buffer_str;
         } else {
@@ -494,8 +506,6 @@ std::string tcp_request(std::string& msg) {
 
     std::cout << "received: " << res;
 
-    /* Desaloca a memória da estrutura `res` e fecha o socket */
-    // freeaddrinfo(res);
     close(fd);
 
     return res;
@@ -554,8 +564,8 @@ void handle_unregister_response(std::string& res) {
 
 void handle_open_response(std::string& res) {
     if (res.substr(0, res.find("OK") + 2) == "ROA OK") {
-        std::string rest = res.substr(res.find("OK") + 3);
-        std::istringstream stream(rest);
+        std::string res_data = res.substr(res.find("OK") + 3);
+        std::istringstream stream(res_data);
 
         std::string aid;
         stream >> aid;
@@ -707,30 +717,36 @@ void handle_show_asset_request(std::string& msg) {
         graceful_shutdown(1);
     }
 
-    /* Em TCP é necessário estabelecer uma ligação com o servidor primeiro
-       (Handshake). Então primeiro cria a conexão para o endereço obtido através
-       de `getaddrinfo()`. */
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
+
+    // Set socket timeout for both reads and writes
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
+        exit(1);
+    }
+
     ssize_t n = connect(fd, res->ai_addr, res->ai_addrlen);
     if (n == -1) {
         graceful_shutdown(1);
     }
 
-    /* Escreve a mensagem "Hello!\n" para o servidor, especificando o seu
-     * tamanho */
     n = write(fd, msg.c_str(), msg.length());
     if (n == -1) {
         graceful_shutdown(1);
     }
+
     std::cout << "sent: " << msg;
 
-    char res_status_buffer[7];
+    char res_status_buffer[CMD_SIZE + 1 + 3];
 
-    n = read(fd, res_status_buffer, 7);
+    n = read(fd, res_status_buffer, sizeof(res_status_buffer));
     if (n == -1) {
         graceful_shutdown(1);
     }
 
-    std::string res = std::string(res_status_buffer);
+    std::string res = std::string(res_status_buffer, n);
 
     std::cout << "received: " << res;
 
@@ -743,7 +759,7 @@ void handle_show_asset_request(std::string& msg) {
         }
 
         std::string fname, fsize;
-        std::string file_info = std::string(file_info_buffer);
+        std::string file_info = std::string(file_info_buffer, n);
         std::istringstream file_info_stream(file_info);
 
         file_info_stream >> fname >> fsize;
@@ -755,18 +771,29 @@ void handle_show_asset_request(std::string& msg) {
             return;
         }
 
+        // Find the starting index of the fdata in the read chunk
         int fdata_idx = fsize.length() + fname.length() + 2;
+        // The size of the fdata portion included in the chunk
         size_t fdata_portion_size;
         if (sizeof(file_info_buffer) - fdata_idx >= std::stoi(fsize)) {
+            // the whole file (all the fdata) is in the chunk
             fdata_portion_size = std::stoi(fsize);
         } else {
+            // only a part of it was read
             fdata_portion_size = sizeof(file_info_buffer) - fdata_idx;
         }
         char fdata_portion[fdata_portion_size];
         memcpy(fdata_portion, file_info.c_str() + fdata_idx,
                sizeof(fdata_portion));
 
-        std::ofstream asset_file(fname);
+        if (!std::filesystem::exists("./assets/")) {
+            if (!std::filesystem::create_directory("./assets/")) {
+                std::cerr << "Error creating directory: ./assets/" << std::endl;
+                graceful_shutdown(1);
+            }
+        }
+
+        std::ofstream asset_file("./assets/" + fname);
         if (!asset_file.is_open()) {
             std::cout << "couldn't create file " << fname << std::endl;
             graceful_shutdown(1);
@@ -781,13 +808,15 @@ void handle_show_asset_request(std::string& msg) {
                 graceful_shutdown(1);
             }
 
+            // in the last read, the '\n' will be included, but it isn't part of
+            // the file
             size_t n_to_write = nleft < n ? nleft : n;
             asset_file.write(fdata_buffer, n_to_write);
             nleft -= n_to_write;
         }
 
         asset_file.close();
-        std::cout << "asset saved in ./" << fname << std::endl;
+        std::cout << "asset saved in ./assets/" << fname << std::endl;
 
         close(fd);
     } else if (res == "RSA NOK") {
@@ -933,6 +962,7 @@ void handle_show_record_response(std::string& res) {
     }
 }
 
+// free memory, close UDP socket and exit with the given code
 void graceful_shutdown(int code) {
     freeaddrinfo(res);
     close(udp_fd);
