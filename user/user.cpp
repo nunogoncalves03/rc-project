@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "util.hpp"
+#include "common.hpp"
 
 /**
  * @brief reads formatted input from terminal and stores it into the given
@@ -36,14 +36,13 @@ bool read_from_terminal(Args&&... args) {
     std::getline(std::cin, line, '\n');
     std::istringstream stream(line);
 
-    auto read_arg = [&stream](auto&& arg) { stream >> arg; };
-    (read_arg(args), ...);
+    (([&stream](auto&& arg) { stream >> arg; })(args), ...);
 
     stream >> rest;
     return rest.length() != 0;
 }
 
-struct addrinfo hints, *res;
+struct addrinfo hints, *dns_res;
 int udp_fd;
 
 // User credentials
@@ -85,6 +84,7 @@ int main(int argc, char** argv) {
     // Global UDP socket
     udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_fd == -1) {
+        std::cout << "ERROR: couldn't open UDP socket" << std::endl;
         exit(1);
     }
 
@@ -97,6 +97,7 @@ int main(int argc, char** argv) {
             0 ||
         setsockopt(udp_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) <
             0) {
+        std::cout << "ERROR: couldn't set UDP socket timeout" << std::endl;
         exit(1);
     }
 
@@ -105,7 +106,7 @@ int main(int argc, char** argv) {
     hints.ai_socktype = 0;      // Socket of any type
 
     // DNS lookup
-    int errcode = getaddrinfo(as_ip.c_str(), as_port.c_str(), &hints, &res);
+    int errcode = getaddrinfo(as_ip.c_str(), as_port.c_str(), &hints, &dns_res);
     if (errcode != 0) {
         std::cout << "DNS lookup failed, couldn't get host info" << std::endl;
         exit(1);
@@ -253,9 +254,11 @@ int main(int argc, char** argv) {
                               << std::endl;
                     continue;
                 }
+                std::cout << "ERROR: syscall stat failed on file "
+                          << asset_fname << std::endl;
                 graceful_shutdown(1);
             }
-            size_t fsize = (size_t)stat_buffer.st_size;
+            ssize_t fsize = (ssize_t)stat_buffer.st_size;
             if (fsize > MAX_ASSET_FILE_SIZE_MB * MB_N_BYTES) {
                 std::cout << "file too big, limit is " << MAX_ASSET_FILE_SIZE_MB
                           << " MB" << std::endl;
@@ -268,13 +271,12 @@ int main(int argc, char** argv) {
                 graceful_shutdown(1);
             }
 
-            std::vector<char> fdata(fsize);
+            std::vector<char> fdata((size_t)fsize);
             asset_file.read(fdata.data(), fsize);
 
-            std::string msg = "OPA " + uid + " " + password + " " + name + " " +
-                              start_value + " " + time_active + " " +
-                              asset_base_name + " " + std::to_string(fsize) +
-                              " ";
+            msg = "OPA " + uid + " " + password + " " + name + " " +
+                  start_value + " " + time_active + " " + asset_base_name +
+                  " " + std::to_string(fsize) + " ";
 
             msg.insert(msg.end(), fdata.begin(), fdata.end());
             msg += "\n";
@@ -435,9 +437,10 @@ int main(int argc, char** argv) {
 }
 
 std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
-    ssize_t n = sendto(socket_fd, msg.c_str(), msg.length(), 0, res->ai_addr,
-                       res->ai_addrlen);
+    ssize_t n = sendto(socket_fd, msg.c_str(), msg.length(), 0,
+                       dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
+        std::cout << "ERROR: couldn't send UDP message" << std::endl;
         graceful_shutdown(1);
     }
 
@@ -446,10 +449,11 @@ std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
     char buffer[res_max_size];
     n = recvfrom(socket_fd, buffer, res_max_size, 0, NULL, NULL);
     if (n == -1) {
+        std::cout << "ERROR: couldn't receive UDP message" << std::endl;
         graceful_shutdown(1);
     }
 
-    std::string buffer_str = std::string(buffer, n);
+    std::string buffer_str = std::string(buffer, (size_t)n);
     std::string res = buffer_str.substr(0, buffer_str.find('\n') + 1);
 
     std::cout << "received: " << res;
@@ -460,6 +464,7 @@ std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
 std::string tcp_request(std::string& msg) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
+        std::cout << "ERROR: couldn't open TCP socket" << std::endl;
         graceful_shutdown(1);
     }
 
@@ -470,16 +475,19 @@ std::string tcp_request(std::string& msg) {
     // Set socket timeout for both reads and writes
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
+        std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
         exit(1);
     }
 
-    ssize_t n = connect(fd, res->ai_addr, res->ai_addrlen);
+    ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
+        std::cout << "ERROR: couldn't perform TCP socket connect" << std::endl;
         graceful_shutdown(1);
     }
 
-    n = write(fd, msg.c_str(), msg.length());
+    n = _write(fd, msg.c_str(), msg.length());
     if (n == -1) {
+        std::cout << "ERROR: couldn't send TCP message" << std::endl;
         graceful_shutdown(1);
     }
 
@@ -489,12 +497,13 @@ std::string tcp_request(std::string& msg) {
     std::string res;
     // Reads from the socket in 128 Bytes chunks
     while (true) {
-        n = read(fd, buffer, 128);
+        n = _read(fd, buffer, 128);
         if (n == -1) {
+            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             graceful_shutdown(1);
         }
 
-        std::string buffer_str = std::string(buffer, n);
+        std::string buffer_str = std::string(buffer, (size_t)n);
         // Check if the response has ended, that is, if the '\n' char is present
         if (buffer_str.find('\n') == std::string::npos) {
             res += buffer_str;
@@ -714,6 +723,7 @@ void handle_list_response(std::string& res) {
 void handle_show_asset_request(std::string& msg) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
+        std::cout << "ERROR: couldn't open TCP socket" << std::endl;
         graceful_shutdown(1);
     }
 
@@ -724,16 +734,19 @@ void handle_show_asset_request(std::string& msg) {
     // Set socket timeout for both reads and writes
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
-        exit(1);
-    }
-
-    ssize_t n = connect(fd, res->ai_addr, res->ai_addrlen);
-    if (n == -1) {
+        std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
         graceful_shutdown(1);
     }
 
-    n = write(fd, msg.c_str(), msg.length());
+    ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
+        std::cout << "ERROR: couldn't perform TCP socket connect" << std::endl;
+        graceful_shutdown(1);
+    }
+
+    n = _write(fd, msg.c_str(), msg.length());
+    if (n == -1) {
+        std::cout << "ERROR: couldn't send TCP message" << std::endl;
         graceful_shutdown(1);
     }
 
@@ -741,25 +754,27 @@ void handle_show_asset_request(std::string& msg) {
 
     char res_status_buffer[CMD_SIZE + 1 + 3];
 
-    n = read(fd, res_status_buffer, sizeof(res_status_buffer));
+    n = _read(fd, res_status_buffer, sizeof(res_status_buffer));
     if (n == -1) {
+        std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
         graceful_shutdown(1);
     }
 
-    std::string res = std::string(res_status_buffer, n);
+    std::string res = std::string(res_status_buffer, (size_t)n);
 
     std::cout << "received: " << res;
 
     if (res == "RSA OK ") {
         char file_info_buffer[MAX_FNAME_SIZE + MAX_FSIZE_SIZE + 2];
 
-        n = read(fd, file_info_buffer, sizeof(file_info_buffer));
+        n = _read(fd, file_info_buffer, sizeof(file_info_buffer));
         if (n == -1) {
+            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             graceful_shutdown(1);
         }
 
         std::string fname, fsize;
-        std::string file_info = std::string(file_info_buffer, n);
+        std::string file_info = std::string(file_info_buffer, (size_t)n);
         std::istringstream file_info_stream(file_info);
 
         file_info_stream >> fname >> fsize;
@@ -772,12 +787,12 @@ void handle_show_asset_request(std::string& msg) {
         }
 
         // Find the starting index of the fdata in the read chunk
-        int fdata_idx = fsize.length() + fname.length() + 2;
+        size_t fdata_idx = fsize.length() + fname.length() + 2;
         // The size of the fdata portion included in the chunk
         size_t fdata_portion_size;
-        if (sizeof(file_info_buffer) - fdata_idx >= std::stoi(fsize)) {
+        if (sizeof(file_info_buffer) - fdata_idx >= (size_t)std::stoi(fsize)) {
             // the whole file (all the fdata) is in the chunk
-            fdata_portion_size = std::stoi(fsize);
+            fdata_portion_size = (size_t)std::stoi(fsize);
         } else {
             // only a part of it was read
             fdata_portion_size = sizeof(file_info_buffer) - fdata_idx;
@@ -798,19 +813,22 @@ void handle_show_asset_request(std::string& msg) {
             std::cout << "couldn't create file " << fname << std::endl;
             graceful_shutdown(1);
         }
-        asset_file.write(fdata_portion, sizeof(fdata_portion));
+        asset_file.write(fdata_portion, (ssize_t)sizeof(fdata_portion));
 
         char fdata_buffer[512];
-        ssize_t nleft = std::stoi(fsize) - sizeof(fdata_portion);
+        ssize_t nleft =
+            (ssize_t)(((size_t)std::stoi(fsize)) - sizeof(fdata_portion));
         while (nleft > 0) {
-            n = read(fd, fdata_buffer, 512);
+            n = _read(fd, fdata_buffer, 512);
             if (n == -1) {
+                std::cout << "ERROR: couldn't read from TCP socket"
+                          << std::endl;
                 graceful_shutdown(1);
             }
 
             // in the last read, the '\n' will be included, but it isn't part of
             // the file
-            size_t n_to_write = nleft < n ? nleft : n;
+            ssize_t n_to_write = nleft < n ? nleft : n;
             asset_file.write(fdata_buffer, n_to_write);
             nleft -= n_to_write;
         }
@@ -877,7 +895,7 @@ void handle_show_record_response(std::string& res) {
                   << std::endl;
         std::cout << "duration: " << time_active << " seconds" << std::endl;
 
-        char next_char = record_stream.get();
+        char next_char = (char)record_stream.get();
 
         if (next_char == '\n') return;
 
@@ -886,7 +904,7 @@ void handle_show_record_response(std::string& res) {
             return;
         }
 
-        next_char = record_stream.get();
+        next_char = (char)record_stream.get();
 
         if (next_char != 'B' && next_char != 'E') {
             std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -915,9 +933,9 @@ void handle_show_record_response(std::string& res) {
                       << bid_date << " " << bid_time << " (" << bid_sec_time
                       << " seconds elapsed)" << std::endl;
 
-            next_char = record_stream.get();
+            next_char = (char)record_stream.get();
             if (next_char == ' ') {
-                next_char = record_stream.get();
+                next_char = (char)record_stream.get();
                 if (next_char != 'B' && next_char != 'E') {
                     std::cout << "ERROR: unexpected response from server"
                               << std::endl;
@@ -946,7 +964,7 @@ void handle_show_record_response(std::string& res) {
                       << " (" << end_sec_time << " seconds elapsed)"
                       << std::endl;
 
-            next_char = record_stream.get();
+            next_char = (char)record_stream.get();
         }
 
         if (next_char != '\n') {
@@ -964,7 +982,7 @@ void handle_show_record_response(std::string& res) {
 
 // free memory, close UDP socket and exit with the given code
 void graceful_shutdown(int code) {
-    freeaddrinfo(res);
+    freeaddrinfo(dns_res);
     close(udp_fd);
 
     std::cout << std::endl;
