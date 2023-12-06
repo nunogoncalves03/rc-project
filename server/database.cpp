@@ -12,7 +12,7 @@
 
 #include "common.hpp"
 
-int init() {
+int db_init() {
     if (!std::filesystem::exists("./DATABASE/")) {
         if (!std::filesystem::create_directory("./DATABASE/")) {
             std::cerr << "Error creating directory: ./DATABASE/" << std::endl;
@@ -141,7 +141,7 @@ int user_is_logged_in(std::string uid) {
     return ERR_USER_DOESNT_EXIST;
 }
 
-int user_remove(std::string uid) {
+int user_unregister(std::string uid) {
     if (user_exists(uid) == TRUE) {
         if (user_is_logged_in(uid) == TRUE) {
             if (!std::filesystem::remove("./DATABASE/USERS/" + uid + "/" + uid +
@@ -235,6 +235,10 @@ int auction_get_info(std::string aid, auction_struct* auction) {
 
     start_file.close();
 
+    if (auction_close_if_expired(aid, auction) != SUCCESS_CODE) {
+        return ERROR_CODE;
+    }
+
     if (auction_is_closed(aid) == TRUE) {
         std::string end_file_path = auction_base_path + "END_" + aid + ".txt";
         std::ifstream end_file(end_file_path);
@@ -257,7 +261,8 @@ int auction_get_info(std::string aid, auction_struct* auction) {
     }
 
     struct stat stat_buffer;
-    const std::string asset_path = auction_base_path + "ASSET/" + auction->asset_fname;
+    const std::string asset_path =
+        auction_base_path + "ASSET/" + auction->asset_fname;
     if (stat(asset_path.c_str(), &stat_buffer) == -1) {
         if (errno == ENOENT) {
             // pathname does not exist
@@ -342,11 +347,13 @@ int auction_create(std::string& aid, std::string uid, std::string name,
         return ERROR_CODE;
     }
 
-    const std::string user_auction_path = "./DATABASE/USERS/" + uid + "/HOSTED/" + aid + ".txt";
+    const std::string user_auction_path =
+        "./DATABASE/USERS/" + uid + "/HOSTED/" + aid + ".txt";
     std::ofstream user_auction_file(user_auction_path);
 
     if (!user_auction_file.is_open()) {
-        std::cerr << "Failed to open the file " << user_auction_path << std::endl;
+        std::cerr << "Failed to open the file " << user_auction_path
+                  << std::endl;
         return ERROR_CODE;
     }
     user_auction_file.close();
@@ -393,7 +400,7 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
 }
 
 int auction_send_asset(std::string aid, int socket_fd, std::string asset_fname,
-                        ssize_t asset_fsize) {
+                       ssize_t asset_fsize) {
     const std::string asset_path =
         "./DATABASE/AUCTIONS/" + aid + "/ASSET/" + asset_fname;
 
@@ -463,6 +470,8 @@ int auction_close(std::string aid) {
         return ERROR_CODE;
     }
 
+    // if the user is trying to close an expired auction, we need to close it
+    // and return as if it was closed already
     if (end_sec_time > auction.timeactive) {
         time_t default_end_sec_time =
             auction.start_fulltime + auction.timeactive;
@@ -470,11 +479,44 @@ int auction_close(std::string aid) {
 
         end_file << default_end_date << " "
                  << default_end_sec_time - auction.start_fulltime;
+
+        end_file.close();
+        
+        return ERR_AUCTION_ALREADY_CLOSED;
     } else {
         end_file << end_datetime << " " << end_sec_time;
+        end_file.close();
     }
 
-    end_file.close();
+    return SUCCESS_CODE;
+}
+
+int auction_close_if_expired(std::string aid, auction_struct* auction) {
+    if (auction_is_closed(aid) == TRUE) {
+        return SUCCESS_CODE;
+    }
+
+    const std::string auction_base_path = "./DATABASE/AUCTIONS/" + aid + "/";
+    time_t current_fulltime;
+    time(&current_fulltime);
+
+    if (current_fulltime - auction->start_fulltime > auction->timeactive) {
+        std::ofstream end_file(auction_base_path + "END_" + aid + ".txt");
+        if (!end_file.is_open()) {
+            std::cout << "Failed to open the file " << auction_base_path
+                      << "END_" << aid << ".txt" << std::endl;
+            return ERROR_CODE;
+        }
+
+        time_t default_end_sec_time =
+            auction->start_fulltime + auction->timeactive;
+        const std::string default_end_date = get_date(default_end_sec_time);
+
+        end_file << default_end_date << " "
+                 << default_end_sec_time - auction->start_fulltime;
+        
+        end_file.close();
+    }
 
     return SUCCESS_CODE;
 }

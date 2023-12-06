@@ -40,7 +40,7 @@ typedef struct auction {
  * @return SUCCESS_CODE if the database was initialized correctly \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int init();
+int db_init();
 
 // user functions
 /**
@@ -102,7 +102,7 @@ int user_is_logged_in(std::string uid);
  * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int user_remove(std::string uid);
+int user_unregister(std::string uid);
 /**
  * @brief stores in the given vector all the user auctions
  * 
@@ -206,6 +206,14 @@ int auction_exists(std::string aid);
  * @return ERROR_CODE if some unexpected error occurs \n
  */
 int auction_close(std::string aid);
+/**
+ * @brief closes the given auction if it has expired
+ * 
+ * @param aid 
+ * @return SUCCESS_CODE if there was no error \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int auction_close_if_expired(std::string aid, auction_struct* auction);
 /**
  * @brief checks if the given auction is closed
  * 
