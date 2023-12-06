@@ -5,7 +5,15 @@
 #include <cctype>
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <string>
+
+std::string zero_pad_number(int number, int width) {
+    std::ostringstream oss;
+    oss << std::setw(width) << std::setfill('0') << number;
+
+    return oss.str();
+}
 
 bool is_number(const std::string& str) {
     try {
@@ -31,6 +39,19 @@ bool is_valid_filename(const std::string& str) {
         return false;
     }
     return true;
+}
+
+std::string get_date(time_t &n_sec) {
+    struct tm* current_time = gmtime(&n_sec);
+    std::string date =
+        std::to_string(current_time->tm_year + 1900) + "-" +
+        zero_pad_number(current_time->tm_mon + 1, 2) + "-" +
+        zero_pad_number(current_time->tm_mday, 2) + " " +
+        zero_pad_number(current_time->tm_hour, 2) + ":" +
+        zero_pad_number(current_time->tm_min, 2) + ":" +
+        zero_pad_number(current_time->tm_sec, 2);
+
+    return date;
 }
 
 ssize_t _read(int fd, void* buf, size_t count) {

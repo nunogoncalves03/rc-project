@@ -2,6 +2,9 @@
 #define _DATABASE_H__
 
 #include <string>
+#include <vector>
+
+#define MAX_AUCTIONS_N 999
 
 #define TRUE 0
 #define FALSE 1
@@ -12,6 +15,24 @@
 #define ERR_USER_DOESNT_EXIST 5
 #define ERR_USER_ALREADY_LOGGED_IN 6
 #define ERR_USER_NOT_LOGGED_IN 7
+
+#define ERR_AUCTION_LIMIT_REACHED 20
+#define ERR_AUCTION_DOESNT_EXIST 21
+#define ERR_AUCTION_ALREADY_CLOSED 22
+
+typedef struct auction {
+    std::string aid;
+    std::string uid;
+    std::string name;
+    std::string asset_fname;
+    ssize_t asset_fsize;
+    int start_value;
+    int timeactive;
+    std::string start_datetime;
+    time_t start_fulltime;
+    std::string end_datetime;
+    time_t end_sec_time;
+} auction_struct;
 
 /**
  * @brief init the database 
@@ -82,16 +103,118 @@ int user_is_logged_in(std::string uid);
  * @return ERROR_CODE if some unexpected error occurs \n
  */
 int user_remove(std::string uid);
+/**
+ * @brief stores in the given vector all the user auctions
+ * 
+ * @param uid 
+ * @param auctions_list
+ * 
+ * @return SUCCESS_CODE if the info was successfully retrieved \n
+ * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list);
 
 // auction functions
-// int auction_create(std::string aid, std::string uid, std::string name,
-//                    std::string asset_fname, int start_value, int duration);
-
 /**
  * @brief counts the number of existing auctions
  * 
  * @return the number of auctions (directories)
  */
 int auction_count();
+/**
+ * @brief writes on the given struct all the info stored related to the auction
+ * 
+ * @param aid
+ * @param auction - ptr to the auction_struct where the info will be stored 
+ *
+ * @return SUCCESS_CODE if the info was retrieved successfully \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ * @return ERROR_CODE  if some unexpected error occurs \n
+ */
+int auction_get_info(std::string aid, auction_struct *auction);
+/**
+ * @brief stores in the given vector all the auctions
+ * 
+ * @param auctions_list
+ * 
+ * @return SUCCESS_CODE if the info was successfully retrieved \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int auction_list(std::vector<auction_struct>& auctions_list);
+/**
+ * @brief creates an auction (doesn't store the asset)
+ * 
+ * @param aid
+ * @param uid
+ * @param name
+ * @param asset_fname
+ * @param start_value
+ * @param time_active
+ * @param start_datetime
+ * @param start_fulltime
+ * 
+ * @return SUCCESS_CODE if the auction was created successfully \n
+ * @return ERR_AUCTION_LIMIT_REACHED if the max number of auctions has been reached \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int auction_create(std::string& aid, std::string uid, std::string name,
+                    std::string asset_fname, int start_value, int time_active);
+/**
+ * @brief reads the asset_fdata from the given socket and stores it
+ * 
+ * @param aid
+ * @param socket_fd
+ * @param asset_fname
+ * @param asset_fsize
+ * 
+ * @return SUCCESS_CODE if the asset was stored successfully \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
+                        std::string asset_fsize);
+/**
+ * @brief writes the asset_fdata to the given socket
+ * 
+ * @param aid
+ * @param socket_fd
+ * @param asset_fname
+ * @param asset_fsize
+ * 
+ * @return SUCCESS_CODE if the asset was sent successfully \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int auction_send_asset(std::string aid, int socket_fd, std::string asset_fname,
+                        ssize_t asset_fsize);
+/**
+ * @brief checks if the auction exists in the database
+ * 
+ * @param aid 
+ * @return TRUE if auction exists \n
+ * @return FALSE if not \n
+ */
+int auction_exists(std::string aid);
+/**
+ * @brief closes the given auction
+ * 
+ * @param aid 
+ * @return SUCCESS_CODE if the auction was closed successfully \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ * @return ERR_AUCTION_ALREADY_CLOSED if the auction was already closed
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int auction_close(std::string aid);
+/**
+ * @brief checks if the given auction is closed
+ * 
+ * @param aid 
+ * @return TRUE if the auction is closed \n
+ * @return FALSE if not \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ */
+int auction_is_closed(std::string aid);
+
 
 #endif

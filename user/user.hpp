@@ -3,23 +3,6 @@
 
 #include <string>
 
-#define MB_N_BYTES 1000000
-
-#define CMD_SIZE 3
-#define UID_SIZE 6
-#define PASSWORD_SIZE 8
-#define AID_SIZE 3
-#define AUCTION_NAME_SIZE 10
-#define DATE_TIME_SIZE 19
-#define DATE_SIZE 10
-#define TIME_SIZE 8
-#define MAX_FNAME_SIZE 24
-#define MAX_FSIZE_SIZE 8
-#define MAX_ASSET_FILE_SIZE_MB 10
-#define VALUE_SIZE 6
-#define DURATION_SIZE 5
-#define STATE_SIZE 1
-
 // Responses maximum sizes
 #define LOGIN_RES_SIZE (CMD_SIZE + 1 + 3 + 1)
 #define LOGOUT_RES_SIZE (CMD_SIZE + 1 + 3 + 1)
