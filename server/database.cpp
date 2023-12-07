@@ -187,7 +187,35 @@ int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list) {
 
     std::sort(auctions_list.begin(), auctions_list.end(),
               [](const auction_struct& a, const auction_struct& b) {
-                  return std::atoi(a.aid.c_str()) < std::atoi(b.aid.c_str());
+                  return std::stoi(a.aid) < std::stoi(b.aid);
+              });
+
+    return SUCCESS_CODE;
+}
+
+int user_bidded_auctions(std::string uid, std::vector<auction_struct>& auctions_list) {
+    if (user_exists(uid) == FALSE) {
+        return ERR_USER_DOESNT_EXIST;
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(
+             "./DATABASE/USERS/" + uid + "/BIDDED/")) {
+        if (entry.is_regular_file()) {
+            const std::string filename = entry.path().filename().string();
+            std::string aid = filename.substr(0, filename.find_last_of('.'));
+
+            auction_struct auction;
+            if (auction_get_info(aid, &auction) != SUCCESS_CODE) {
+                return ERROR_CODE;
+            }
+
+            auctions_list.push_back(auction);
+        }
+    }
+
+    std::sort(auctions_list.begin(), auctions_list.end(),
+              [](const auction_struct& a, const auction_struct& b) {
+                  return std::stoi(a.aid) < std::stoi(b.aid);
               });
 
     return SUCCESS_CODE;
@@ -204,6 +232,25 @@ int auction_count() {
     }
 
     return counter;
+}
+
+/**
+ * @brief checks if the given auction is closed
+ *
+ * @param aid
+ * @return TRUE if the auction is closed \n
+ * @return FALSE if not \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ */
+int auction_is_closed(std::string aid) {
+    if (auction_exists(aid) == TRUE) {
+        if (std::filesystem::exists("./DATABASE/AUCTIONS/" + aid + "/END_" +
+                                    aid + ".txt")) {
+            return TRUE;
+        }
+        return FALSE;
+    }
+    return ERR_AUCTION_DOESNT_EXIST;
 }
 
 int auction_get_info(std::string aid, auction_struct* auction) {
@@ -295,7 +342,7 @@ int auction_list(std::vector<auction_struct>& auctions_list) {
 
     std::sort(auctions_list.begin(), auctions_list.end(),
               [](const auction_struct& a, const auction_struct& b) {
-                  return std::atoi(a.aid.c_str()) < std::atoi(b.aid.c_str());
+                  return std::stoi(a.aid) < std::stoi(b.aid);
               });
 
     return SUCCESS_CODE;
@@ -472,7 +519,7 @@ int auction_close(std::string aid) {
 
     // if the user is trying to close an expired auction, we need to close it
     // and return as if it was closed already
-    if (end_sec_time > auction.timeactive) {
+    if (end_sec_time >= auction.timeactive) {
         time_t default_end_sec_time =
             auction.start_fulltime + auction.timeactive;
         const std::string default_end_date = get_date(default_end_sec_time);
@@ -481,7 +528,7 @@ int auction_close(std::string aid) {
                  << default_end_sec_time - auction.start_fulltime;
 
         end_file.close();
-        
+
         return ERR_AUCTION_ALREADY_CLOSED;
     } else {
         end_file << end_datetime << " " << end_sec_time;
@@ -500,7 +547,7 @@ int auction_close_if_expired(std::string aid, auction_struct* auction) {
     time_t current_fulltime;
     time(&current_fulltime);
 
-    if (current_fulltime - auction->start_fulltime > auction->timeactive) {
+    if (current_fulltime - auction->start_fulltime >= auction->timeactive) {
         std::ofstream end_file(auction_base_path + "END_" + aid + ".txt");
         if (!end_file.is_open()) {
             std::cout << "Failed to open the file " << auction_base_path
@@ -514,20 +561,131 @@ int auction_close_if_expired(std::string aid, auction_struct* auction) {
 
         end_file << default_end_date << " "
                  << default_end_sec_time - auction->start_fulltime;
-        
+
         end_file.close();
     }
 
     return SUCCESS_CODE;
 }
 
-int auction_is_closed(std::string aid) {
-    if (auction_exists(aid) == TRUE) {
-        if (std::filesystem::exists("./DATABASE/AUCTIONS/" + aid + "/END_" +
-                                    aid + ".txt")) {
-            return TRUE;
-        }
-        return FALSE;
+int auction_bids(std::string aid, std::vector<bid_struct>& bids_list) {
+    if (auction_exists(aid) == FALSE) {
+        return ERR_AUCTION_DOESNT_EXIST;
     }
-    return ERR_AUCTION_DOESNT_EXIST;
+
+    std::vector<std::filesystem::directory_entry> entry_list;
+    for (const auto& entry : std::filesystem::directory_iterator(
+             "./DATABASE/AUCTIONS/" + aid + "/BIDS/")) {
+        if (entry.is_regular_file()) {
+            entry_list.push_back(entry);
+        }
+    }
+
+    std::sort(entry_list.begin(), entry_list.end(),
+              [](const std::filesystem::directory_entry& a,
+                 const std::filesystem::directory_entry& b) {
+                  const std::string a_value =
+                      a.path().filename().string().substr(0, 6);
+                  const std::string b_value =
+                      b.path().filename().string().substr(0, 6);
+                  return std::stoi(a_value) < std::stoi(b_value);
+              });
+
+    if (entry_list.size() > 50) {
+        entry_list.erase(entry_list.begin(), entry_list.end() - 50);
+    }
+
+    for (auto entry = entry_list.rbegin(); entry != entry_list.rend(); entry++) {
+        std::ifstream bid_file((*entry).path());
+
+        if (!bid_file.is_open()) {
+            std::cerr << "Failed to open the file " << (*entry).path() << std::endl;
+            return ERROR_CODE;
+        }
+
+        bid_struct bid;
+        bid.aid = aid;
+        bid_file >> bid.uid >> bid.value;
+        bid_file.get();
+
+        char date[DATE_TIME_SIZE + 1];
+        bid_file.read(date, DATE_TIME_SIZE);
+        bid.datetime = std::string(date, DATE_TIME_SIZE);
+
+        bid_file >> bid.sec_time;
+        bid_file.close();
+        
+        bids_list.push_back(bid);
+    }
+
+    return SUCCESS_CODE;
+}
+
+int bid_create(std::string aid, std::string uid, int value) {
+    const std::string bids_base_path = "./DATABASE/AUCTIONS/" + aid + "/BIDS/";
+
+    if (auction_exists(aid) == FALSE) {
+        return ERR_AUCTION_DOESNT_EXIST;
+    }
+
+    auction_struct auction;
+    if (auction_get_info(aid, &auction) != SUCCESS_CODE) {
+        return ERROR_CODE;
+    }
+
+    if (auction.end_sec_time != -1) {
+        return ERR_AUCTION_ALREADY_CLOSED;
+    }
+
+    int highest_bid = auction.start_value;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(bids_base_path)) {
+        if (entry.is_regular_file()) {
+            const std::string bid_value =
+                entry.path().filename().string().substr(0, 6);
+
+            if (std::stoi(bid_value) > highest_bid) {
+                highest_bid = std::stoi(bid_value);
+            }
+        }
+    }
+
+    if (value <= highest_bid) {
+        return ERR_BID_TOO_LOW;
+    }
+
+    if (uid == auction.uid) {
+        return ERR_BID_OWN_AUCTION;
+    }
+
+    time_t bid_fulltime;
+    time(&bid_fulltime);
+    std::string bid_datetime = get_date(bid_fulltime);
+
+    time_t bid_sec_time = bid_fulltime - auction.start_fulltime;
+
+    std::string bid_file_path =
+        bids_base_path + zero_pad_number(value, 6) + ".txt";
+    std::ofstream bid_file(bid_file_path);
+
+    if (!bid_file.is_open()) {
+        std::cerr << "Failed to open the file " << bid_file_path << std::endl;
+        return ERROR_CODE;
+    }
+
+    bid_file << uid << " " << value << " " << bid_datetime << " "
+             << bid_sec_time;
+    bid_file.close();
+
+    const std::string user_bid_path =
+        "./DATABASE/USERS/" + uid + "/BIDDED/" + aid + ".txt";
+    std::ofstream user_bid_file(user_bid_path);
+
+    if (!user_bid_file.is_open()) {
+        std::cerr << "Failed to open the file " << user_bid_path << std::endl;
+        return ERROR_CODE;
+    }
+    user_bid_file.close();
+
+    return SUCCESS_CODE;
 }

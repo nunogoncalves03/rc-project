@@ -11,14 +11,17 @@
 #define SUCCESS_CODE 2
 #define ERROR_CODE 3
 
-#define ERR_USER_ALREADY_EXISTS 4
-#define ERR_USER_DOESNT_EXIST 5
-#define ERR_USER_ALREADY_LOGGED_IN 6
-#define ERR_USER_NOT_LOGGED_IN 7
+#define ERR_USER_ALREADY_EXISTS 10
+#define ERR_USER_DOESNT_EXIST 11
+#define ERR_USER_ALREADY_LOGGED_IN 12
+#define ERR_USER_NOT_LOGGED_IN 13
 
 #define ERR_AUCTION_LIMIT_REACHED 20
 #define ERR_AUCTION_DOESNT_EXIST 21
 #define ERR_AUCTION_ALREADY_CLOSED 22
+
+#define ERR_BID_OWN_AUCTION 30
+#define ERR_BID_TOO_LOW 31
 
 typedef struct auction {
     std::string aid;
@@ -33,6 +36,14 @@ typedef struct auction {
     std::string end_datetime;
     time_t end_sec_time;
 } auction_struct;
+
+typedef struct bid {
+    std::string aid;
+    std::string uid;
+    int value;
+    std::string datetime;
+    time_t sec_time;
+} bid_struct;
 
 /**
  * @brief init the database 
@@ -114,6 +125,17 @@ int user_unregister(std::string uid);
  * @return ERROR_CODE if some unexpected error occurs \n
  */
 int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list);
+/**
+ * @brief stores in the given vector all the auctions where the user placed bids
+ * 
+ * @param uid 
+ * @param auctions_list
+ * 
+ * @return SUCCESS_CODE if the info was successfully retrieved \n
+ * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int user_bidded_auctions(std::string uid, std::vector<auction_struct>& auctions_list);
 
 // auction functions
 /**
@@ -215,14 +237,28 @@ int auction_close(std::string aid);
  */
 int auction_close_if_expired(std::string aid, auction_struct* auction);
 /**
- * @brief checks if the given auction is closed
+ * @brief stores in the given vector all the bids from the auction
  * 
  * @param aid 
- * @return TRUE if the auction is closed \n
- * @return FALSE if not \n
+ * @param bids_list 
+ * @return SUCCESS_CODE if there was no error \n
  * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ * @return ERROR_CODE if some unexpected error occurs \n
  */
-int auction_is_closed(std::string aid);
-
+int auction_bids(std::string aid, std::vector<bid_struct>& bids_list);
+/**
+ * @brief places a bid from the given user on the given auction
+ * 
+ * @param aid 
+ * @param uid 
+ * @param value 
+ * @return SUCCESS_CODE if there was no error \n
+ * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
+ * @return ERR_AUCTION_ALREADY_CLOSED if the auction was already closed \n
+ * @return ERR_BID_TOO_LOW if there's already an equal or higher bid placed \n
+ * @return ERR_BID_OWN_AUCTION if the user is trying to bid on his own auction \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int bid_create(std::string aid, std::string uid, int value);
 
 #endif
