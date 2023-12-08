@@ -3,6 +3,8 @@
 
 #include <string>
 
+#include "common.hpp"
+
 // Responses maximum sizes
 #define LOGIN_RES_SIZE (CMD_SIZE + 1 + 3 + 1)
 #define LOGOUT_RES_SIZE (CMD_SIZE + 1 + 3 + 1)

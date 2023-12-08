@@ -3,9 +3,9 @@
 #include <unistd.h>
 
 #include <cctype>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
-#include <iomanip>
 #include <string>
 
 std::string zero_pad_number(int number, int width) {
@@ -41,15 +41,14 @@ bool is_valid_filename(const std::string& str) {
     return true;
 }
 
-std::string get_date(time_t &n_sec) {
+std::string get_date(time_t& n_sec) {
     struct tm* current_time = gmtime(&n_sec);
-    std::string date =
-        std::to_string(current_time->tm_year + 1900) + "-" +
-        zero_pad_number(current_time->tm_mon + 1, 2) + "-" +
-        zero_pad_number(current_time->tm_mday, 2) + " " +
-        zero_pad_number(current_time->tm_hour, 2) + ":" +
-        zero_pad_number(current_time->tm_min, 2) + ":" +
-        zero_pad_number(current_time->tm_sec, 2);
+    std::string date = std::to_string(current_time->tm_year + 1900) + "-" +
+                       zero_pad_number(current_time->tm_mon + 1, 2) + "-" +
+                       zero_pad_number(current_time->tm_mday, 2) + " " +
+                       zero_pad_number(current_time->tm_hour, 2) + ":" +
+                       zero_pad_number(current_time->tm_min, 2) + ":" +
+                       zero_pad_number(current_time->tm_sec, 2);
 
     return date;
 }

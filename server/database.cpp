@@ -82,9 +82,27 @@ int user_create(std::string uid, std::string pass) {
     return SUCCESS_CODE;
 }
 
-int user_login(std::string uid) {
+int user_login(std::string uid, std::string pass) {
     if (user_exists(uid) == FALSE) {
         return ERR_USER_DOESNT_EXIST;
+    }
+
+    std::string password_file_path =
+        "./DATABASE/USERS/" + uid + "/" + uid + "_pass.txt";
+    std::ifstream password_file(password_file_path);
+
+    if (!password_file.is_open()) {
+        std::cerr << "Failed to open the file " << password_file_path
+                  << std::endl;
+        return ERROR_CODE;
+    }
+
+    std::string stored_pass;
+    password_file >> stored_pass;
+    password_file.close();
+
+    if (stored_pass != pass) {
+        return ERR_USER_INVALID_PASSWORD;
     }
 
     if (user_is_logged_in(uid) == TRUE) {
@@ -193,7 +211,8 @@ int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list) {
     return SUCCESS_CODE;
 }
 
-int user_bidded_auctions(std::string uid, std::vector<auction_struct>& auctions_list) {
+int user_bidded_auctions(std::string uid,
+                         std::vector<auction_struct>& auctions_list) {
     if (user_exists(uid) == FALSE) {
         return ERR_USER_DOESNT_EXIST;
     }
@@ -595,11 +614,13 @@ int auction_bids(std::string aid, std::vector<bid_struct>& bids_list) {
         entry_list.erase(entry_list.begin(), entry_list.end() - 50);
     }
 
-    for (auto entry = entry_list.rbegin(); entry != entry_list.rend(); entry++) {
+    for (auto entry = entry_list.rbegin(); entry != entry_list.rend();
+         entry++) {
         std::ifstream bid_file((*entry).path());
 
         if (!bid_file.is_open()) {
-            std::cerr << "Failed to open the file " << (*entry).path() << std::endl;
+            std::cerr << "Failed to open the file " << (*entry).path()
+                      << std::endl;
             return ERROR_CODE;
         }
 
@@ -614,7 +635,7 @@ int auction_bids(std::string aid, std::vector<bid_struct>& bids_list) {
 
         bid_file >> bid.sec_time;
         bid_file.close();
-        
+
         bids_list.push_back(bid);
     }
 
