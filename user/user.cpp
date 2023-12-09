@@ -534,7 +534,7 @@ void handle_login_response(std::string& res, std::string& uid_,
         logged_in = true;
         uid = uid_;
         password = password_;
-    } else if (res == "ERR\n") {
+    } else if (res == "RLI ERR\n") {
         std::cout << "ERR: unable to login" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -549,7 +549,7 @@ void handle_logout_response(std::string& res) {
         std::cout << "user not logged in" << std::endl;
     } else if (res == "RLO UNR\n") {
         std::cout << "unknown user" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RLO ERR\n") {
         std::cout << "ERR: unable to logout" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -564,7 +564,7 @@ void handle_unregister_response(std::string& res) {
         std::cout << "incorrect unregister attempt" << std::endl;
     } else if (res == "RUR UNR\n") {
         std::cout << "unknown user" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RUR ERR\n") {
         std::cout << "ERR: unable to unregister" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -590,7 +590,7 @@ void handle_open_response(std::string& res) {
         std::cout << "couldn't start auction" << std::endl;
     } else if (res == "ROA NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "ROA ERR\n") {
         std::cout << "ERR: unable to open a new auction" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -608,7 +608,7 @@ void handle_close_response(std::string& res) {
         std::cout << "auction is already closed" << std::endl;
     } else if (res == "RCL NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RCL ERR\n") {
         std::cout << "ERR: unable to close the auction" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -643,7 +643,7 @@ void handle_myauctions_response(std::string& res) {
         std::cout << "you have no ongoing auctions" << std::endl;
     } else if (res == "RMA NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RMA ERR\n") {
         std::cout << "ERR: unable to list your auctions" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -679,7 +679,7 @@ void handle_mybids_response(std::string& res) {
         std::cout << "you have no ongoing bids" << std::endl;
     } else if (res == "RMB NLG\n") {
         std::cout << "user not logged in" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RMB ERR\n") {
         std::cout << "ERR: unable to list your bids" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -713,7 +713,7 @@ void handle_list_response(std::string& res) {
         }
     } else if (res == "RLS NOK\n") {
         std::cout << "there are no ongoing auctions" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RLS ERR\n") {
         std::cout << "ERR: unable to list ongoing auctions" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -841,7 +841,7 @@ void handle_show_asset_request(std::string& msg) {
         std::cout << "there's no file associated with the auction or some "
                      "internal error occurred"
                   << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RSA ERR\n") {
         std::cout << "ERR: unable to download the asset" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -859,7 +859,7 @@ void handle_bid_response(std::string& res) {
         std::cout << "user not logged in" << std::endl;
     } else if (res == "RBD ILG\n") {
         std::cout << "you can't bid on your own auction" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RBD ERR\n") {
         std::cout << "ERR: unable to bid" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -973,7 +973,7 @@ void handle_show_record_response(std::string& res) {
         }
     } else if (res == "RRC NOK\n") {
         std::cout << "there's no auction with the given id" << std::endl;
-    } else if (res == "ERR\n") {
+    } else if (res == "RRC ERR\n") {
         std::cout << "ERR: unable to show the record" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;

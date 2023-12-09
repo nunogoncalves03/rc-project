@@ -87,21 +87,7 @@ int user_login(std::string uid, std::string pass) {
         return ERR_USER_DOESNT_EXIST;
     }
 
-    std::string password_file_path =
-        "./DATABASE/USERS/" + uid + "/" + uid + "_pass.txt";
-    std::ifstream password_file(password_file_path);
-
-    if (!password_file.is_open()) {
-        std::cerr << "Failed to open the file " << password_file_path
-                  << std::endl;
-        return ERROR_CODE;
-    }
-
-    std::string stored_pass;
-    password_file >> stored_pass;
-    password_file.close();
-
-    if (stored_pass != pass) {
+    if (user_password_match(uid, pass) != TRUE) {
         return ERR_USER_INVALID_PASSWORD;
     }
 
@@ -121,9 +107,13 @@ int user_login(std::string uid, std::string pass) {
     return SUCCESS_CODE;
 }
 
-int user_logout(std::string uid) {
+int user_logout(std::string uid, std::string pass) {
     if (user_exists(uid) == FALSE) {
         return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_password_match(uid, pass) != TRUE) {
+        return ERR_USER_INVALID_PASSWORD;
     }
 
     if (user_is_logged_in(uid) == FALSE) {
@@ -159,33 +149,61 @@ int user_is_logged_in(std::string uid) {
     return ERR_USER_DOESNT_EXIST;
 }
 
-int user_unregister(std::string uid) {
-    if (user_exists(uid) == TRUE) {
-        if (user_is_logged_in(uid) == TRUE) {
-            if (!std::filesystem::remove("./DATABASE/USERS/" + uid + "/" + uid +
-                                         "_login.txt")) {
-                std::cerr << "Error removing file: ./DATABASE/USERS/" << uid
-                          << "/" << uid << "_login.txt" << std::endl;
-                return ERROR_CODE;
-            }
-        }
+int user_password_match(std::string uid, std::string pass) {
+    std::string password_file_path =
+        "./DATABASE/USERS/" + uid + "/" + uid + "_pass.txt";
+    std::ifstream password_file(password_file_path);
 
-        if (!std::filesystem::remove("./DATABASE/USERS/" + uid + "/" + uid +
-                                     "_pass.txt")) {
-            std::cerr << "Error removing file: ./DATABASE/USERS/" << uid << "/"
-                      << uid << "_pass.txt" << std::endl;
-            return ERROR_CODE;
-        }
-
-        return SUCCESS_CODE;
+    if (!password_file.is_open()) {
+        std::cerr << "Failed to open the file " << password_file_path
+                  << std::endl;
+        return ERROR_CODE;
     }
 
-    return ERR_USER_DOESNT_EXIST;
+    std::string stored_pass;
+    password_file >> stored_pass;
+    password_file.close();
+
+    return stored_pass == pass ? TRUE : FALSE;
+}
+
+int user_unregister(std::string uid, std::string pass) {
+    if (user_exists(uid) == FALSE) {
+        return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_password_match(uid, pass) != TRUE) {
+        return ERR_USER_INVALID_PASSWORD;
+    }
+
+    if (user_is_logged_in(uid) == FALSE) {
+        return ERR_USER_NOT_LOGGED_IN;
+    }
+
+    if (!std::filesystem::remove("./DATABASE/USERS/" + uid + "/" + uid +
+                                 "_login.txt")) {
+        std::cerr << "Error removing file: ./DATABASE/USERS/" << uid << "/"
+                  << uid << "_login.txt" << std::endl;
+        return ERROR_CODE;
+    }
+
+    if (!std::filesystem::remove("./DATABASE/USERS/" + uid + "/" + uid +
+                                 "_pass.txt")) {
+        std::cerr << "Error removing file: ./DATABASE/USERS/" << uid << "/"
+                  << uid << "_pass.txt" << std::endl;
+        return ERROR_CODE;
+    }
+
+    return SUCCESS_CODE;
 }
 
 int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list) {
     if (user_exists(uid) == FALSE) {
         return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_is_logged_in(uid) == FALSE) {
+        return ERR_USER_NOT_LOGGED_IN;
     }
 
     for (const auto& entry : std::filesystem::directory_iterator(
@@ -215,6 +233,10 @@ int user_bidded_auctions(std::string uid,
                          std::vector<auction_struct>& auctions_list) {
     if (user_exists(uid) == FALSE) {
         return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_is_logged_in(uid) == FALSE) {
+        return ERR_USER_NOT_LOGGED_IN;
     }
 
     for (const auto& entry : std::filesystem::directory_iterator(
@@ -367,8 +389,21 @@ int auction_list(std::vector<auction_struct>& auctions_list) {
     return SUCCESS_CODE;
 }
 
-int auction_create(std::string& aid, std::string uid, std::string name,
-                   std::string asset_fname, int start_value, int time_active) {
+int auction_create(std::string& aid, std::string uid, std::string pass,
+                   std::string name, std::string asset_fname, int start_value,
+                   int time_active) {
+    if (user_exists(uid) == FALSE) {
+        return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_password_match(uid, pass) != TRUE) {
+        return ERR_USER_INVALID_PASSWORD;
+    }
+
+    if (user_is_logged_in(uid) == FALSE) {
+        return ERR_USER_NOT_LOGGED_IN;
+    }
+
     int count = auction_count();
     if (count >= MAX_AUCTIONS_N) {
         return ERR_AUCTION_LIMIT_REACHED;
@@ -427,8 +462,18 @@ int auction_create(std::string& aid, std::string uid, std::string name,
     return SUCCESS_CODE;
 }
 
+void auction_remove(std::string aid) {
+    try {
+        std::filesystem::remove_all("./DATABASE/AUCTIONS/" + aid + "/");
+    } catch (const std::exception& ex) {
+        std::cerr << "Database error: " << ex.what() << std::endl;
+        exit(1);
+    }
+}
+
 int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
-                        std::string asset_fsize) {
+                        std::string asset_fsize, char* fdata_portion,
+                        ssize_t portion_size) {
     const std::string asset_base_path =
         "./DATABASE/AUCTIONS/" + aid + "/ASSET/";
 
@@ -443,12 +488,25 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
         return ERROR_CODE;
     }
 
+    if (portion_size >= std::stoi(asset_fsize)) {
+        asset_file.write(fdata_portion, std::stoi(asset_fsize));
+        asset_file.close();
+        return SUCCESS_CODE;
+    }
+    asset_file.write(fdata_portion, portion_size);
+
     char fdata_buffer[512];
     ssize_t n;
-    ssize_t nleft = (ssize_t)std::stoi(asset_fsize);
+    ssize_t nleft = (ssize_t)std::stoi(asset_fsize) - portion_size;
     while (nleft > 0) {
         n = _read(socket_fd, fdata_buffer, 512);
         if (n == -1) {
+            if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                std::cout
+                    << "TCP timeout occurred while waiting for connections"
+                    << std::endl;
+            }
+
             std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             return ERROR_CODE;
         }
@@ -461,7 +519,6 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
     }
 
     asset_file.close();
-
     return SUCCESS_CODE;
 }
 

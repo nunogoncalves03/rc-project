@@ -83,13 +83,15 @@ int user_login(std::string uid, std::string pass);
  * @brief logs out the given user
  *
  * @param uid
+ * @param pass
  *
  * @return SUCCESS_CODE if user was logged out successfully \n
  * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
  * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
+ * @return ERR_USER_INVALID_PASSWORD if the passwords don't match \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int user_logout(std::string uid);
+int user_logout(std::string uid, std::string pass);
 /**
  * @brief checks if the user exists in the database
  *
@@ -108,15 +110,29 @@ int user_exists(std::string uid);
  */
 int user_is_logged_in(std::string uid);
 /**
- * @brief remove the user and logout if user is logged in
+ * @brief checks if given password matches the stored user's password
  *
  * @param uid
+ * @param pass
  *
- * @return SUCCESS_CODE if user was removed successfully \n
- * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return TRUE if the passwords match \n
+ * @return FALSE if not \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int user_unregister(std::string uid);
+int user_password_match(std::string uid, std::string pass);
+/**
+ * @brief unregister the user if logged in
+ *
+ * @param uid
+ * @param pass
+ *
+ * @return SUCCESS_CODE if user was unregistered successfully \n
+ * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
+ * @return ERR_USER_INVALID_PASSWORD if the passwords don't match \n
+ * @return ERROR_CODE if some unexpected error occurs \n
+ */
+int user_unregister(std::string uid, std::string pass);
 /**
  * @brief stores in the given vector all the user auctions
  *
@@ -125,6 +141,7 @@ int user_unregister(std::string uid);
  *
  * @return SUCCESS_CODE if the info was successfully retrieved \n
  * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
 int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list);
@@ -136,6 +153,7 @@ int user_auctions(std::string uid, std::vector<auction_struct>& auctions_list);
  *
  * @return SUCCESS_CODE if the info was successfully retrieved \n
  * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
 int user_bidded_auctions(std::string uid,
@@ -183,10 +201,21 @@ int auction_list(std::vector<auction_struct>& auctions_list);
  * @return SUCCESS_CODE if the auction was created successfully \n
  * @return ERR_AUCTION_LIMIT_REACHED if the max number of auctions has been
  * reached \n
+ * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
+ * @return ERR_USER_INVALID_PASSWORD if the passwords don't match \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int auction_create(std::string& aid, std::string uid, std::string name,
-                   std::string asset_fname, int start_value, int time_active);
+int auction_create(std::string& aid, std::string uid, std::string pass,
+                   std::string name, std::string asset_fname, int start_value,
+                   int time_active);
+/**
+ * @brief deletes an auction from the database
+ *
+ * @param aid
+ *
+ */
+void auction_remove(std::string aid);
 /**
  * @brief reads the asset_fdata from the given socket and stores it
  *
@@ -194,13 +223,16 @@ int auction_create(std::string& aid, std::string uid, std::string name,
  * @param socket_fd
  * @param asset_fname
  * @param asset_fsize
+ * @param fdata_portion
+ * @param portion_size
  *
  * @return SUCCESS_CODE if the asset was stored successfully \n
  * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
 int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
-                        std::string asset_fsize);
+                        std::string asset_fsize, char* fdata_portion,
+                        ssize_t portion_size);
 /**
  * @brief writes the asset_fdata to the given socket
  *
