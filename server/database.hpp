@@ -20,6 +20,7 @@
 #define ERR_AUCTION_LIMIT_REACHED 20
 #define ERR_AUCTION_DOESNT_EXIST 21
 #define ERR_AUCTION_ALREADY_CLOSED 22
+#define ERR_AUCTION_NOT_OWNED_BY_USER 23
 
 #define ERR_BID_OWN_AUCTION 30
 #define ERR_BID_TOO_LOW 31
@@ -167,7 +168,9 @@ int user_bidded_auctions(std::string uid,
  */
 int auction_count();
 /**
- * @brief writes on the given struct all the info stored related to the auction
+ * @brief writes on the given struct all the info stored related to the auction.
+ * This function calls close_if_expired() to make sure that the returned state
+ * is up-to-date
  *
  * @param aid
  * @param auction - ptr to the auction_struct where the info will be stored
@@ -238,15 +241,12 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
  *
  * @param aid
  * @param socket_fd
- * @param asset_fname
- * @param asset_fsize
  *
  * @return SUCCESS_CODE if the asset was sent successfully \n
  * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int auction_send_asset(std::string aid, int socket_fd, std::string asset_fname,
-                       ssize_t asset_fsize);
+int auction_send_asset(std::string aid, int socket_fd);
 /**
  * @brief checks if the auction exists in the database
  *
@@ -261,10 +261,14 @@ int auction_exists(std::string aid);
  * @param aid
  * @return SUCCESS_CODE if the auction was closed successfully \n
  * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
- * @return ERR_AUCTION_ALREADY_CLOSED if the auction was already closed
+ * @return ERR_AUCTION_NOT_OWNED_BY_USER if the user doesn't own the auction \n
+ * @return ERR_AUCTION_ALREADY_CLOSED if the auction was already closed \n
+ * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
+ * @return ERR_USER_INVALID_PASSWORD if the passwords don't match \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int auction_close(std::string aid);
+int auction_close(std::string aid, std::string uid, std::string pass);
 /**
  * @brief closes the given auction if it has expired
  *
@@ -288,15 +292,19 @@ int auction_bids(std::string aid, std::vector<bid_struct>& bids_list);
  *
  * @param aid
  * @param uid
+ * @param pass
  * @param value
+ *
  * @return SUCCESS_CODE if there was no error \n
  * @return ERR_AUCTION_DOESNT_EXIST if there's no such auction \n
  * @return ERR_AUCTION_ALREADY_CLOSED if the auction was already closed \n
+ * @return ERR_USER_DOESNT_EXIST if user doesn't exist \n
+ * @return ERR_USER_NOT_LOGGED_IN if user is not logged in \n
+ * @return ERR_USER_INVALID_PASSWORD if the passwords don't match \n
  * @return ERR_BID_TOO_LOW if there's already an equal or higher bid placed \n
- * @return ERR_BID_OWN_AUCTION if the user is trying to bid on his own auction
- * \n
+ * @return ERR_BID_OWN_AUCTION if the auction is owned by the user \n
  * @return ERROR_CODE if some unexpected error occurs \n
  */
-int bid_create(std::string aid, std::string uid, int value);
+int bid_create(std::string aid, std::string uid, std::string pass, int value);
 
 #endif

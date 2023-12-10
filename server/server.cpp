@@ -73,6 +73,7 @@ int main(int argc, char **argv) {
 void udp_handler() {
     int fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1) {
+        std::cerr << "Couldn't open UDP socket" << std::endl;
         exit(1);
     }
 
@@ -100,11 +101,13 @@ void udp_handler() {
     // passing NULL means that we are the host
     int errcode = getaddrinfo(NULL, as_port.c_str(), &hints, &dns_res);
     if (errcode != 0) {
+        std::cerr << "DNS lookup failed" << std::endl;
         exit(1);
     }
 
     n = bind(fd, dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
+        std::cerr << "Couldn't bind UDP socket" << std::endl;
         exit(1);
     }
 
@@ -130,6 +133,7 @@ void udp_handler() {
         char ip_str[addrlen + 1];
         // Convert binary IP address to string
         if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) == NULL) {
+            std::cerr << "Couldn't convert IP to string" << std::endl;
             exit(1);
         }
 
@@ -147,6 +151,7 @@ void udp_handler() {
             n = sendto(fd, ERROR_MSG, sizeof(ERROR_MSG) - 1, 0,
                        (struct sockaddr *)&addr, addrlen);
             if (n == -1) {
+                std::cerr << "Couldn't send UDP msg" << std::endl;
                 exit(1);
             }
             continue;
@@ -272,7 +277,7 @@ void udp_handler() {
             if (status_code == SUCCESS_CODE) {
                 if (auctions_list.size() == 0) {
                     res = "RMB NOK\n";
-                } else {  // TODO
+                } else {
                     res = "RMB OK";
                     for (auction_struct &auction : auctions_list) {
                         res += " " + auction.aid + " " +
@@ -297,7 +302,7 @@ void udp_handler() {
             if (status_code == SUCCESS_CODE) {
                 if (auctions_list.size() == 0) {
                     res = "RLS NOK\n";
-                } else {  // TODO
+                } else {
                     res = "RLS OK";
                     for (auction_struct &auction : auctions_list) {
                         res += " " + auction.aid + " " +
@@ -327,7 +332,7 @@ void udp_handler() {
                       auction.start_datetime + " " +
                       std::to_string(auction.timeactive);
 
-                std::vector<bid_struct> bid_list;  // TODO
+                std::vector<bid_struct> bid_list;
                 if (auction_bids(aid, bid_list) == SUCCESS_CODE) {
                     for (bid_struct &bid : bid_list) {
                         res += " B " + bid.uid + " " +
@@ -372,6 +377,7 @@ void send_udp_msg(int fd, std::string msg, sockaddr_in *addr,
 void tcp_handler() {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
+        std::cerr << "Couldn't open TCP socket" << std::endl;
         exit(1);
     }
 
@@ -398,16 +404,19 @@ void tcp_handler() {
 
     int errcode = getaddrinfo(NULL, as_port.c_str(), &hints, &dns_res);
     if (errcode != 0) {
+        std::cerr << "DNS lookup failed" << std::endl;
         exit(1);
     }
 
     n = bind(fd, dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
+        std::cerr << "Couldn't bind TCP socket" << std::endl;
         exit(1);
     }
 
     // 5 connection requests will be queued before further requests are refused
     if (listen(fd, 5) == -1) {  // FIXME
+        std::cerr << "Couldn't listen on TCP socket" << std::endl;
         exit(1);
     }
 
@@ -432,6 +441,7 @@ void tcp_handler() {
         char ip_str[addrlen + 1];
         // Convert binary IP address to string
         if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) == NULL) {
+            std::cerr << "Couldn't convert IP to string" << std::endl;
             exit(1);
         }
 
@@ -545,7 +555,116 @@ void handle_tcp_request(int fd) {
         } else {
             res = "ROA NOK\n";  // FIXME
         }
+    } else if (cmd == "CLS") {
+        char buffer[128];
+
+        std::vector<std::string> tokens;
+        n = read_tokens_from_tcp_socket(fd, tokens, 3, PASSWORD_SIZE, false,
+                                        buffer);
+        if (n == -1) {
+            terminate_tcp_conn(fd, "RCL ERR\n");
+            return;
+        }
+
+        std::string uid = tokens[0];
+        std::string password = tokens[1];
+        std::string aid = tokens[2];
+
+        if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
+            aid.length() != AID_SIZE || !is_number(uid) ||
+            uid.length() != UID_SIZE || !is_alphanumerical(password) ||
+            password.length() != PASSWORD_SIZE) {
+            terminate_tcp_conn(fd, "RCL ERR\n");
+            return;
+        }
+
+        int status_code = auction_close(aid, uid, password);
+        if (status_code == SUCCESS_CODE) {
+            res = "RCL OK\n";
+        } else if (status_code == ERR_USER_DOESNT_EXIST ||
+                   status_code == ERR_USER_INVALID_PASSWORD) {
+            res = "RCL NOK\n";
+        } else if (status_code == ERR_USER_NOT_LOGGED_IN) {
+            res = "RCL NLG\n";
+        } else if (status_code == ERR_AUCTION_DOESNT_EXIST) {
+            res = "RCL EAU\n";
+        } else if (status_code == ERR_AUCTION_NOT_OWNED_BY_USER) {
+            res = "RCL EOW\n";
+        } else if (status_code == ERR_AUCTION_ALREADY_CLOSED) {
+            res = "RCL END\n";
+        } else {
+            res = "RCL NOK\n";  // FIXME
+        }
+    } else if (cmd == "SAS") {
+        char buffer[128];
+
+        std::vector<std::string> tokens;
+        n = read_tokens_from_tcp_socket(fd, tokens, 1, AID_SIZE, false, buffer);
+        if (n == -1) {
+            terminate_tcp_conn(fd, "RSA ERR\n");
+            return;
+        }
+
+        std::string aid = tokens[0];
+
+        if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
+            aid.length() != AID_SIZE) {
+            terminate_tcp_conn(fd, "RSA ERR\n");
+            return;
+        }
+
+        int status_code = auction_send_asset(aid, fd);
+        if (status_code == SUCCESS_CODE) {
+            close(fd);
+            return;
+        } else {
+            res = "RSA NOK\n";
+        }
+    } else if (cmd == "BID") {
+        char buffer[128];
+
+        std::vector<std::string> tokens;
+        n = read_tokens_from_tcp_socket(fd, tokens, 4, PASSWORD_SIZE, false,
+                                        buffer);
+        if (n == -1) {
+            terminate_tcp_conn(fd, "RBD ERR\n");
+            return;
+        }
+
+        std::string uid = tokens[0];
+        std::string password = tokens[1];
+        std::string aid = tokens[2];
+        std::string value = tokens[3];
+
+        if (n != 1 || buffer[0] != '\n' || !is_number(uid) ||
+            uid.length() != UID_SIZE || !is_alphanumerical(password) ||
+            password.length() != PASSWORD_SIZE || !is_number(aid) ||
+            aid.length() != AID_SIZE || !is_number(value) ||
+            value.length() > VALUE_SIZE) {
+            terminate_tcp_conn(fd, "RBD ERR\n");
+            return;
+        }
+
+        int status_code = bid_create(aid, uid, password, std::stoi(value));
+        if (status_code == SUCCESS_CODE) {
+            res = "RBD ACC\n";
+        } else if (status_code == ERR_AUCTION_ALREADY_CLOSED) {
+            res = "RBD NOK\n";
+        } else if (status_code == ERR_USER_NOT_LOGGED_IN ||
+                   status_code == ERR_USER_DOESNT_EXIST ||
+                   status_code == ERR_USER_INVALID_PASSWORD) {
+            res = "RBD NLG\n";
+        } else if (status_code == ERR_BID_TOO_LOW) {
+            res = "RBD REF\n";
+        } else if (status_code == ERR_BID_OWN_AUCTION) {
+            res = "RBD ILG\n";
+        } else if (status_code == ERR_AUCTION_DOESNT_EXIST) {
+            res = "RBD NOK\n";  // FIXME
+        } else {
+            res = "RBD NOK\n";  // FIXME
+        }
     } else {
+        res = ERROR_MSG;
     }
 
     terminate_tcp_conn(fd, res);

@@ -522,14 +522,15 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
     return SUCCESS_CODE;
 }
 
-int auction_send_asset(std::string aid, int socket_fd, std::string asset_fname,
-                       ssize_t asset_fsize) {
-    const std::string asset_path =
-        "./DATABASE/AUCTIONS/" + aid + "/ASSET/" + asset_fname;
-
-    if (auction_exists(aid) == FALSE) {
-        return ERR_AUCTION_DOESNT_EXIST;
+int auction_send_asset(std::string aid, int socket_fd) {
+    auction_struct auction;
+    int status_code = auction_get_info(aid, &auction);
+    if (status_code != SUCCESS_CODE) {
+        return status_code;
     }
+
+    const std::string asset_path =
+        "./DATABASE/AUCTIONS/" + aid + "/ASSET/" + auction.asset_fname;
 
     std::ifstream asset_file(asset_path);
     if (!asset_file.is_open()) {
@@ -537,9 +538,13 @@ int auction_send_asset(std::string aid, int socket_fd, std::string asset_fname,
         return ERROR_CODE;
     }
 
+    const std::string res = "RSA OK " + auction.asset_fname + " " +
+                            std::to_string(auction.asset_fsize) + " ";
+    _write(socket_fd, res.c_str(), res.length());
+
     char fdata_buffer[512];
     ssize_t n;
-    ssize_t nleft = asset_fsize;
+    ssize_t nleft = auction.asset_fsize;
     while (nleft > 0) {
         ssize_t n_to_write = nleft < 512 ? nleft : 512;
         asset_file.read(fdata_buffer, n_to_write);
@@ -550,6 +555,12 @@ int auction_send_asset(std::string aid, int socket_fd, std::string asset_fname,
             std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
             return ERROR_CODE;
         }
+    }
+
+    n = _write(socket_fd, "\n", 1);
+    if (n == -1) {
+        std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
+        return ERROR_CODE;
     }
 
     asset_file.close();
@@ -564,11 +575,32 @@ int auction_exists(std::string aid) {
     return FALSE;
 }
 
-int auction_close(std::string aid) {
+int auction_close(std::string aid, std::string uid, std::string pass) {
     const std::string auction_base_path = "./DATABASE/AUCTIONS/" + aid + "/";
+
+    if (user_exists(uid) == FALSE) {
+        return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_password_match(uid, pass) != TRUE) {
+        return ERR_USER_INVALID_PASSWORD;
+    }
+
+    if (user_is_logged_in(uid) == FALSE) {
+        return ERR_USER_NOT_LOGGED_IN;
+    }
 
     if (auction_exists(aid) == FALSE) {
         return ERR_AUCTION_DOESNT_EXIST;
+    }
+
+    auction_struct auction;
+    if (auction_get_info(aid, &auction) != SUCCESS_CODE) {
+        return ERROR_CODE;
+    }
+
+    if (auction.uid != uid) {
+        return ERR_AUCTION_NOT_OWNED_BY_USER;
     }
 
     if (auction_is_closed(aid) == TRUE) {
@@ -578,11 +610,6 @@ int auction_close(std::string aid) {
     time_t end_fulltime;
     time(&end_fulltime);
     std::string end_datetime = get_date(end_fulltime);
-
-    auction_struct auction;
-    if (auction_get_info(aid, &auction) != SUCCESS_CODE) {
-        return ERROR_CODE;
-    }
 
     const time_t end_sec_time = end_fulltime - auction.start_fulltime;
 
@@ -699,7 +726,7 @@ int auction_bids(std::string aid, std::vector<bid_struct>& bids_list) {
     return SUCCESS_CODE;
 }
 
-int bid_create(std::string aid, std::string uid, int value) {
+int bid_create(std::string aid, std::string uid, std::string pass, int value) {
     const std::string bids_base_path = "./DATABASE/AUCTIONS/" + aid + "/BIDS/";
 
     if (auction_exists(aid) == FALSE) {
@@ -713,6 +740,18 @@ int bid_create(std::string aid, std::string uid, int value) {
 
     if (auction.end_sec_time != -1) {
         return ERR_AUCTION_ALREADY_CLOSED;
+    }
+
+    if (user_exists(uid) == FALSE) {
+        return ERR_USER_DOESNT_EXIST;
+    }
+
+    if (user_password_match(uid, pass) != TRUE) {
+        return ERR_USER_INVALID_PASSWORD;
+    }
+
+    if (user_is_logged_in(uid) == FALSE) {
+        return ERR_USER_NOT_LOGGED_IN;
     }
 
     int highest_bid = auction.start_value;
