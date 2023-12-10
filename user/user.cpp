@@ -754,7 +754,7 @@ void handle_show_asset_request(std::string& msg) {
 
     char res_status_buffer[CMD_SIZE + 1 + 3];
 
-    n = _read(fd, res_status_buffer, sizeof(res_status_buffer));
+    n = read_from_tcp_socket(fd, res_status_buffer, sizeof(res_status_buffer));
     if (n == -1) {
         std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
         graceful_shutdown(1);
@@ -767,7 +767,8 @@ void handle_show_asset_request(std::string& msg) {
     if (res == "RSA OK ") {
         char file_info_buffer[MAX_FNAME_SIZE + MAX_FSIZE_SIZE + 2];
 
-        n = _read(fd, file_info_buffer, sizeof(file_info_buffer));
+        n = read_from_tcp_socket(fd, file_info_buffer,
+                                 sizeof(file_info_buffer));
         if (n == -1) {
             std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             graceful_shutdown(1);
@@ -790,12 +791,12 @@ void handle_show_asset_request(std::string& msg) {
         size_t fdata_idx = fsize.length() + fname.length() + 2;
         // The size of the fdata portion included in the chunk
         size_t fdata_portion_size;
-        if (sizeof(file_info_buffer) - fdata_idx >= (size_t)std::stoi(fsize)) {
+        if ((size_t)n - fdata_idx >= (size_t)std::stoi(fsize)) {
             // the whole file (all the fdata) is in the chunk
             fdata_portion_size = (size_t)std::stoi(fsize);
         } else {
             // only a part of it was read
-            fdata_portion_size = sizeof(file_info_buffer) - fdata_idx;
+            fdata_portion_size = (size_t)n - fdata_idx;
         }
         char fdata_portion[fdata_portion_size];
         memcpy(fdata_portion, file_info.c_str() + fdata_idx,

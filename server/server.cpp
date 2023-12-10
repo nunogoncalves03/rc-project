@@ -14,7 +14,9 @@
 #include <atomic>
 #include <csignal>
 #include <cstring>
+#include <functional>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -24,6 +26,7 @@
 #include "database.hpp"
 
 std::atomic<bool> verbose(false);
+std::mutex db_mutex;
 std::atomic<bool> shutdown_flag(false);
 std::string as_port = "58058";
 
@@ -35,8 +38,17 @@ void signalHandler(int signal) {
     }
 }
 
+template <typename Func, typename... Args>
+auto db_lock(Func func, Args &&...args) {
+    std::lock_guard<std::mutex> lock(db_mutex);
+
+    // Call the provided function with its arguments
+    return func(std::forward<Args>(args)...);
+}
+
 int main(int argc, char **argv) {
     std::signal(SIGINT, signalHandler);
+    std::signal(SIGPIPE, SIG_IGN);
 
     // Parse command-line arguments
     for (int i = 1; i < argc; i++) {
@@ -126,33 +138,32 @@ void udp_handler() {
             } else {
                 std::cerr << "Error receiving data: " << strerror(errno)
                           << std::endl;
-                exit(1);
+                continue;
             }
         }
 
         char ip_str[addrlen + 1];
+        std::string address;
         // Convert binary IP address to string
-        if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) == NULL) {
-            std::cerr << "Couldn't convert IP to string" << std::endl;
-            exit(1);
-        }
+        if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) != NULL) {
+            // Convert port number to host byte order
+            int port = ntohs(addr.sin_port);
 
-        // Convert port number to host byte order
-        int port = ntohs(addr.sin_port);
+            address = std::string(ip_str) + ":" + std::to_string(port);
+        } else {
+            std::cerr << "Couldn't convert IP to string" << std::endl;
+            address = "ERR";
+        }
 
         std::string req = std::string(buffer, (size_t)n);
 
-        if (verbose.load()) {
-            std::cout << "[" << ip_str << ":" << port << "] received: " << req
-                      << std::endl;
-        }
+        log_connection(address, req, false);
 
         if (n > MAX_REQ_SIZE || n < MIN_REQ_SIZE) {
             n = sendto(fd, ERROR_MSG, sizeof(ERROR_MSG) - 1, 0,
                        (struct sockaddr *)&addr, addrlen);
             if (n == -1) {
                 std::cerr << "Couldn't send UDP msg" << std::endl;
-                exit(1);
             }
             continue;
         }
@@ -172,14 +183,14 @@ void udp_handler() {
                 continue;
             }
 
-            int status_code = user_create(uid, password);
+            int status_code = db_lock(user_create, uid, password);
             if (status_code == SUCCESS_CODE) {
                 res = "RLI REG\n";
-                if (user_login(uid, password) != SUCCESS_CODE) {
+                if (db_lock(user_login, uid, password) != SUCCESS_CODE) {
                     res = "RLI NOK\n";  // FIXME
                 }
             } else if (status_code == ERR_USER_ALREADY_EXISTS) {
-                status_code = user_login(uid, password);
+                status_code = db_lock(user_login, uid, password);
                 if (status_code == SUCCESS_CODE ||
                     status_code == ERR_USER_ALREADY_LOGGED_IN) {
                     res = "RLI OK\n";
@@ -202,7 +213,7 @@ void udp_handler() {
                 continue;
             }
 
-            int status_code = user_logout(uid, password);
+            int status_code = db_lock(user_logout, uid, password);
             if (status_code == SUCCESS_CODE) {
                 res = "RLO OK\n";
             } else if (status_code == ERR_USER_NOT_LOGGED_IN) {
@@ -223,7 +234,7 @@ void udp_handler() {
                 continue;
             }
 
-            int status_code = user_unregister(uid, password);
+            int status_code = db_lock(user_unregister, uid, password);
             if (status_code == SUCCESS_CODE) {
                 res = "RUR OK\n";
             } else if (status_code == ERR_USER_NOT_LOGGED_IN) {
@@ -244,7 +255,7 @@ void udp_handler() {
             }
 
             std::vector<auction_struct> auctions_list;
-            int status_code = user_auctions(uid, auctions_list);
+            int status_code = db_lock(user_auctions, uid, auctions_list);
             if (status_code == SUCCESS_CODE) {
                 if (auctions_list.size() == 0) {
                     res = "RMA NOK\n";
@@ -273,7 +284,7 @@ void udp_handler() {
             }
 
             std::vector<auction_struct> auctions_list;
-            int status_code = user_bidded_auctions(uid, auctions_list);
+            int status_code = db_lock(user_bidded_auctions, uid, auctions_list);
             if (status_code == SUCCESS_CODE) {
                 if (auctions_list.size() == 0) {
                     res = "RMB NOK\n";
@@ -298,7 +309,7 @@ void udp_handler() {
             }
 
             std::vector<auction_struct> auctions_list;
-            int status_code = auction_list(auctions_list);
+            int status_code = db_lock(auction_list, auctions_list);
             if (status_code == SUCCESS_CODE) {
                 if (auctions_list.size() == 0) {
                     res = "RLS NOK\n";
@@ -324,7 +335,7 @@ void udp_handler() {
             }
 
             auction_struct auction;
-            int status_code = auction_get_info(aid, &auction);
+            int status_code = db_lock(auction_get_info, aid, &auction);
             if (status_code == SUCCESS_CODE) {
                 res = "RRC OK " + auction.uid + " " + auction.name + " " +
                       auction.asset_fname + " " +
@@ -333,7 +344,7 @@ void udp_handler() {
                       std::to_string(auction.timeactive);
 
                 std::vector<bid_struct> bid_list;
-                if (auction_bids(aid, bid_list) == SUCCESS_CODE) {
+                if (db_lock(auction_bids, aid, bid_list) == SUCCESS_CODE) {
                     for (bid_struct &bid : bid_list) {
                         res += " B " + bid.uid + " " +
                                std::to_string(bid.value) + " " + bid.datetime +
@@ -434,21 +445,24 @@ void tcp_handler() {
             } else {
                 std::cerr << "Error receiving data: " << strerror(errno)
                           << std::endl;
-                exit(1);
+                continue;
             }
         }
 
         char ip_str[addrlen + 1];
+        std::string address;
         // Convert binary IP address to string
-        if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) == NULL) {
+        if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) != NULL) {
+            // Convert port number to host byte order
+            int port = ntohs(addr.sin_port);
+
+            address = std::string(ip_str) + ":" + std::to_string(port);
+        } else {
             std::cerr << "Couldn't convert IP to string" << std::endl;
-            exit(1);
+            address = "ERR";
         }
 
-        // Convert port number to host byte order
-        // int port = ntohs(addr.sin_port);
-
-        threads.push_back(std::thread(handle_tcp_request, new_fd));
+        threads.push_back(std::thread(handle_tcp_request, new_fd, address));
     }
 
     for (std::thread &t : threads) {
@@ -459,7 +473,7 @@ void tcp_handler() {
     close(fd);
 }
 
-void handle_tcp_request(int fd) {
+void handle_tcp_request(int fd, std::string address) {
     struct timeval timeout;
     timeout.tv_sec = 10;
     timeout.tv_usec = 0;
@@ -477,11 +491,10 @@ void handle_tcp_request(int fd) {
     ssize_t nleft = CMD_SIZE;
     while (nleft > 0) {
         n = _read(fd, cmd_buffer + (CMD_SIZE - nleft), (size_t)nleft);
-        if (n == -1) {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                std::cout
-                    << "TCP timeout occurred while waiting for connections"
-                    << std::endl;
+        if (n == -1 || n == 0) {
+            if (n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+                std::cout << "TCP timeout occurred while receiving command"
+                          << std::endl;
             } else {
                 std::cerr << "Error receiving data: " << strerror(errno)
                           << std::endl;
@@ -515,6 +528,10 @@ void handle_tcp_request(int fd) {
         std::string asset_fname = tokens[5];
         std::string asset_fsize = tokens[6];
 
+        cmd += " " + uid + " " + password + " " + name + " " + start_value +
+               " " + time_active + " " + asset_fname + " " + asset_fsize + "\n";
+        log_connection(address, cmd, true);
+
         if (!is_number(uid) || uid.length() != UID_SIZE ||
             !is_alphanumerical(password) ||
             password.length() != PASSWORD_SIZE || !is_alphanumerical(name) ||
@@ -535,11 +552,11 @@ void handle_tcp_request(int fd) {
 
         std::string aid;
         int status_code =
-            auction_create(aid, uid, password, name, asset_fname,
-                           std::stoi(start_value), std::stoi(time_active));
+            db_lock(auction_create, aid, uid, password, name, asset_fname,
+                    std::stoi(start_value), std::stoi(time_active));
         if (status_code == SUCCESS_CODE) {
-            status_code = auction_store_asset(aid, fd, asset_fname, asset_fsize,
-                                              buffer_ptr, n - 1);
+            status_code = db_lock(auction_store_asset, aid, fd, asset_fname,
+                                  asset_fsize, buffer_ptr, n - 1);
             if (status_code == SUCCESS_CODE) {
                 res = "ROA OK " + aid + "\n";
             } else {
@@ -570,6 +587,10 @@ void handle_tcp_request(int fd) {
         std::string password = tokens[1];
         std::string aid = tokens[2];
 
+        cmd += " " + uid + " " + password + " " + aid +
+               std::string(buffer, (size_t)n);
+        log_connection(address, cmd, true);
+
         if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE || !is_number(uid) ||
             uid.length() != UID_SIZE || !is_alphanumerical(password) ||
@@ -578,7 +599,7 @@ void handle_tcp_request(int fd) {
             return;
         }
 
-        int status_code = auction_close(aid, uid, password);
+        int status_code = db_lock(auction_close, aid, uid, password);
         if (status_code == SUCCESS_CODE) {
             res = "RCL OK\n";
         } else if (status_code == ERR_USER_DOESNT_EXIST ||
@@ -607,13 +628,16 @@ void handle_tcp_request(int fd) {
 
         std::string aid = tokens[0];
 
+        cmd += " " + aid + std::string(buffer, (size_t)n);
+        log_connection(address, cmd, true);
+
         if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE) {
             terminate_tcp_conn(fd, "RSA ERR\n");
             return;
         }
 
-        int status_code = auction_send_asset(aid, fd);
+        int status_code = db_lock(auction_send_asset, aid, fd);
         if (status_code == SUCCESS_CODE) {
             close(fd);
             return;
@@ -636,6 +660,10 @@ void handle_tcp_request(int fd) {
         std::string aid = tokens[2];
         std::string value = tokens[3];
 
+        cmd += " " + uid + " " + password + " " + aid + " " + value +
+               std::string(buffer, (size_t)n);
+        log_connection(address, cmd, true);
+
         if (n != 1 || buffer[0] != '\n' || !is_number(uid) ||
             uid.length() != UID_SIZE || !is_alphanumerical(password) ||
             password.length() != PASSWORD_SIZE || !is_number(aid) ||
@@ -645,7 +673,8 @@ void handle_tcp_request(int fd) {
             return;
         }
 
-        int status_code = bid_create(aid, uid, password, std::stoi(value));
+        int status_code =
+            db_lock(bid_create, aid, uid, password, std::stoi(value));
         if (status_code == SUCCESS_CODE) {
             res = "RBD ACC\n";
         } else if (status_code == ERR_AUCTION_ALREADY_CLOSED) {
@@ -664,6 +693,8 @@ void handle_tcp_request(int fd) {
             res = "RBD NOK\n";  // FIXME
         }
     } else {
+        cmd += " (unknown command)";
+        log_connection(address, cmd, true);
         res = ERROR_MSG;
     }
 
@@ -685,18 +716,15 @@ ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string> &tokens,
     while (n_tokens > 0 && nleft > 0) {
         n = _read(fd, buffer, (size_t)nleft);
         if (n == -1 || n == 0) {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                std::cout
-                    << "TCP timeout occurred while waiting for connections"
-                    << std::endl;
+            if (n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+                std::cout << "TCP timeout occurred while receiving command"
+                          << std::endl;
             } else {
                 std::cerr << "Error receiving data: " << strerror(errno)
                           << std::endl;
             }
             return -1;
         }
-
-        std::cout << n << std::endl;
 
         size_t i = 0;
         char c;
@@ -768,4 +796,11 @@ ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string> &tokens,
     }
 
     return -1;
+}
+
+void log_connection(std::string &address, std::string &cmd, bool tcp) {
+    if (verbose.load()) {
+        std::cout << "[" << address << "](" << (tcp ? "TCP" : "UDP")
+                  << ") received: " << cmd << std::endl;
+    }
 }

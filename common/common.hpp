@@ -24,4 +24,5 @@ bool is_valid_filename(const std::string& str);
 std::string get_date(time_t& n_sec);
 
 ssize_t _read(int fd, void* buf, size_t count);
+ssize_t read_from_tcp_socket(int fd, char* buf, size_t count);
 ssize_t _write(int fd, const void* buf, size_t count);

@@ -25,11 +25,12 @@ void udp_handler();
 void send_udp_msg(int fd, std::string msg, sockaddr_in* addr,
                   socklen_t addrlen);
 void tcp_handler();
-void handle_tcp_request(int fd);
+void handle_tcp_request(int fd, std::string address);
 
 void terminate_tcp_conn(int fd, std::string msg);
 ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string>& tokens,
                                     int n_tokens, size_t max_token_size,
                                     bool read_token, char rest[128]);
+void log_connection(std::string& address, std::string& cmd, bool tcp);
 
 #endif

@@ -500,11 +500,10 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
     ssize_t nleft = (ssize_t)std::stoi(asset_fsize) - portion_size;
     while (nleft > 0) {
         n = _read(socket_fd, fdata_buffer, 512);
-        if (n == -1) {
-            if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                std::cout
-                    << "TCP timeout occurred while waiting for connections"
-                    << std::endl;
+        if (n == -1 || n == 0) {
+            if (n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+                std::cout << "TCP timeout occurred while reading asset"
+                          << std::endl;
             }
 
             std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
@@ -540,10 +539,14 @@ int auction_send_asset(std::string aid, int socket_fd) {
 
     const std::string res = "RSA OK " + auction.asset_fname + " " +
                             std::to_string(auction.asset_fsize) + " ";
-    _write(socket_fd, res.c_str(), res.length());
+
+    ssize_t n = _write(socket_fd, res.c_str(), res.length());
+    if (n == -1) {
+        std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
+        return ERROR_CODE;
+    }
 
     char fdata_buffer[512];
-    ssize_t n;
     ssize_t nleft = auction.asset_fsize;
     while (nleft > 0) {
         ssize_t n_to_write = nleft < 512 ? nleft : 512;
