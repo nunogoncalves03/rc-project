@@ -534,7 +534,8 @@ void handle_tcp_request(int fd, std::string address) {
 
         if (!is_number(uid) || uid.length() != UID_SIZE ||
             !is_alphanumerical(password) ||
-            password.length() != PASSWORD_SIZE || !is_alphanumerical(name) ||
+            password.length() != PASSWORD_SIZE ||
+            !is_alphanumerical(name, "-_") ||
             name.length() > AUCTION_NAME_SIZE || !is_number(start_value) ||
             start_value.length() > VALUE_SIZE || !is_number(time_active) ||
             time_active.length() > DURATION_SIZE ||

@@ -1,3 +1,6 @@
+#ifndef _COMMON_H__
+#define _COMMON_H__
+
 #include <string>
 
 #define MB_N_BYTES 1000000
@@ -19,10 +22,13 @@
 
 std::string zero_pad_number(int number, int width);
 bool is_number(const std::string& str);
-bool is_alphanumerical(const std::string& str);
+bool is_alphanumerical(const std::string& str,
+                       const std::string& special_chars = "");
 bool is_valid_filename(const std::string& str);
 std::string get_date(time_t& n_sec);
 
 ssize_t _read(int fd, void* buf, size_t count);
 ssize_t read_from_tcp_socket(int fd, char* buf, size_t count);
 ssize_t _write(int fd, const void* buf, size_t count);
+
+#endif

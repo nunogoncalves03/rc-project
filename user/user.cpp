@@ -220,7 +220,8 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            if (!is_alphanumerical(name) || name.length() > AUCTION_NAME_SIZE) {
+            if (!is_alphanumerical(name, "-_") ||
+                name.length() > AUCTION_NAME_SIZE) {
                 std::cout << "name can only contain up to " << AUCTION_NAME_SIZE
                           << " alphanumerical characters" << std::endl;
                 continue;
@@ -878,7 +879,7 @@ void handle_show_record_response(std::string& res) {
             start_value >> start_date >> start_time >> time_active;
 
         if (!is_number(host_uid) || host_uid.length() != UID_SIZE ||
-            !is_alphanumerical(auction_name) ||
+            !is_alphanumerical(auction_name, "-_") ||
             auction_name.length() > AUCTION_NAME_SIZE ||
             !is_valid_filename(asset_fname) || !is_number(start_value) ||
             start_value.length() > VALUE_SIZE ||

@@ -1,3 +1,5 @@
+#include "common.hpp"
+
 #include <errno.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -25,9 +27,11 @@ bool is_number(const std::string& str) {
     }
 }
 
-bool is_alphanumerical(const std::string& str) {
+bool is_alphanumerical(const std::string& str,
+                       const std::string& special_chars) {
     for (const char c : str) {
-        if (!std::isalnum(c)) return false;
+        if (!std::isalnum(c) && special_chars.find(c) == std::string::npos)
+            return false;
     }
     return true;
 }
