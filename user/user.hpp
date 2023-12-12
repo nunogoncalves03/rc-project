@@ -1,9 +1,9 @@
 #ifndef _USER_H__
 #define _USER_H__
 
-#include <string>
-#include <sstream>
 #include <iostream>
+#include <sstream>
+#include <string>
 
 #include "common.hpp"
 
@@ -50,7 +50,8 @@ void handle_login_response(std::string& res, std::string& uid_,
                            std::string& password_);
 void handle_logout_response(std::string& res);
 void handle_unregister_response(std::string& res);
-void handle_open_response(std::string& res);
+void handle_open_request(std::string& msg, std::string& asset_path,
+                         ssize_t asset_fsize);
 void handle_close_response(std::string& res);
 void handle_myauctions_response(std::string& res);
 void handle_mybids_response(std::string& res);

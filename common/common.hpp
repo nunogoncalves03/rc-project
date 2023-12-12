@@ -2,6 +2,7 @@
 #define _COMMON_H__
 
 #include <string>
+#include <vector>
 
 #define MB_N_BYTES 1000000
 
@@ -29,6 +30,11 @@ std::string get_date(time_t& n_sec);
 
 ssize_t _read(int fd, void* buf, size_t count);
 ssize_t read_from_tcp_socket(int fd, char* buf, size_t count);
+bool read_tokens(std::istringstream& stream, std::vector<std::string>& tokens,
+                 int n_tokens, bool end_expected);
+ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string>& tokens,
+                                    int n_tokens, size_t max_token_size,
+                                    bool read_token, char rest[128]);
 ssize_t _write(int fd, const void* buf, size_t count);
 
 #endif

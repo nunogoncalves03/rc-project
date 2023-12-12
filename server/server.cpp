@@ -710,101 +710,10 @@ void terminate_tcp_conn(int fd, std::string msg, std::string address) {
     close(fd);
 }
 
-ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string> &tokens,
-                                    int n_tokens, size_t max_token_size,
-                                    bool read_token, char rest[128]) {
-    char buffer[128];
-    ssize_t n;
-    ssize_t nleft = 128;
-    std::string token;
-    while (n_tokens > 0 && nleft > 0) {
-        n = _read(fd, buffer, (size_t)nleft);
-        if (n == -1 || n == 0) {
-            if (n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
-                std::cout << "TCP timeout occurred while receiving command"
-                          << std::endl;
-            } else {
-                std::cerr << "Error receiving data: " << strerror(errno)
-                          << std::endl;
-            }
-            return -1;
-        }
-
-        size_t i = 0;
-        char c;
-        while (true) {
-            if (read_token) {
-                size_t j = i;
-                while (j < (size_t)n &&
-                       j - i + 1 + token.length() <= max_token_size &&
-                       buffer[j] != ' ' && buffer[j] != '\n') {
-                    j++;
-                }
-
-                if (j == (size_t)n) {
-                    token += std::string(buffer + i, j - i);
-                    break;
-                }
-
-                c = buffer[j];
-                if (j - i + 1 + token.length() > max_token_size && c != ' ' &&
-                    c != '\n') {
-                    return -1;
-                }
-
-                if (c == ' ' || c == '\n') {
-                    read_token = false;
-                    if (i == j) {
-                        if (token.length() == 0) {
-                            return -1;
-                        } else {
-                            // jump
-                            continue;
-                        }
-
-                    } else {
-                        token += std::string(buffer + i, j - i);
-                        i = j;
-                    }
-                }
-            } else {
-                c = buffer[i];
-                if (c != ' ' && c != '\n') {
-                    return -1;
-                }
-
-                if (token.length() != 0) {
-                    tokens.push_back(token);
-                    token = "";
-                    n_tokens--;
-                }
-
-                if (c == '\n' && n_tokens > 0) {
-                    return -1;
-                }
-
-                // espaço ou \n com n_tokens = 0
-                if (n_tokens == 0) {
-                    memcpy(rest, buffer + i, (size_t)n - i);
-                    return n - (ssize_t)i;
-                }
-
-                // espaço e tokens > 0
-                read_token = true;
-                i++;
-            }
-        }
-
-        nleft -= n;
-        memset(buffer, 0, sizeof(buffer));
-    }
-
-    return -1;
-}
-
-void log_connection(const std::string &address, const std::string &cmd, bool tcp, bool received) {
+void log_connection(const std::string &address, const std::string &cmd,
+                    bool tcp, bool received) {
     if (verbose.load()) {
-        std::cout << "[" << address << "](" << (tcp ? "TCP" : "UDP")
-                  << ") " << (received ? "received: " : "sent: ") << cmd << std::endl;
+        std::cout << "[" << address << "](" << (tcp ? "TCP" : "UDP") << ") "
+                  << (received ? "received: " : "sent: ") << cmd << std::endl;
     }
 }

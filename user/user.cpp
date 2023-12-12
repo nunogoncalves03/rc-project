@@ -35,6 +35,10 @@ int main(int argc, char** argv) {
         std::cout << "coudln't register SIGINT handler" << std::endl;
         exit(1);
     }
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        std::cout << "coudln't register SIGPIPE handler" << std::endl;
+        exit(1);
+    }
 
     std::string as_ip = "localhost";
     std::string as_port = "58058";
@@ -246,24 +250,11 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            std::ifstream asset_file(asset_fname);
-            if (!asset_file.is_open()) {
-                std::cout << "couldn't open file " << asset_fname << std::endl;
-                graceful_shutdown(1);
-            }
-
-            std::vector<char> fdata((size_t)fsize);
-            asset_file.read(fdata.data(), fsize);
-
             msg = "OPA " + uid + " " + password + " " + name + " " +
                   start_value + " " + time_active + " " + asset_base_name +
                   " " + std::to_string(fsize) + " ";
 
-            msg.insert(msg.end(), fdata.begin(), fdata.end());
-            msg += "\n";
-
-            std::string res = tcp_request(msg);
-            handle_open_response(res);
+            handle_open_request(msg, asset_fname, fsize);
         } else if (cmd == "close") {
             std::string aid;
             const bool left_over_chars = read_from_terminal(aid);
@@ -552,29 +543,119 @@ void handle_unregister_response(std::string& res) {
     }
 }
 
-void handle_open_response(std::string& res) {
-    if (res.substr(0, res.find("OK") + 2) == "ROA OK") {
-        std::string res_data = res.substr(res.find("OK") + 3);
-        std::istringstream stream(res_data);
+void handle_open_request(std::string& msg, std::string& asset_path,
+                         ssize_t asset_fsize) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == -1) {
+        std::cout << "ERROR: couldn't open TCP socket" << std::endl;
+        graceful_shutdown(1);
+    }
 
-        std::string aid;
-        stream >> aid;
+    struct timeval timeout;
+    timeout.tv_sec = 10;
+    timeout.tv_usec = 0;
 
-        if (!is_number(aid) || aid.length() != AID_SIZE ||
-            stream.get() != '\n') {
+    // Set socket timeout for both reads and writes
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
+        std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
+        exit(1);
+    }
+
+    ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
+    if (n == -1) {
+        std::cout << "ERROR: couldn't perform TCP socket connect" << std::endl;
+        graceful_shutdown(1);
+    }
+
+    _write(fd, msg.c_str(), msg.length());
+    if (n == -1) {
+        std::cout << "ERROR: couldn't send TCP message" << std::endl;
+        close(fd);
+        return;
+    }
+
+    std::ifstream asset_file(asset_path);
+    if (!asset_file.is_open()) {
+        std::cout << "couldn't open file " << asset_path << std::endl;
+        graceful_shutdown(1);
+    }
+
+    char fdata_buffer[512];
+    ssize_t nleft = asset_fsize;
+    while (nleft > 0) {
+        ssize_t n_to_write = nleft < 512 ? nleft : 512;
+        asset_file.read(fdata_buffer, n_to_write);
+        nleft -= n_to_write;
+
+        n = _write(fd, fdata_buffer, (size_t)n_to_write);
+        if (n == -1) {
+            // Server parsed the "header" part of the request and already sent a
+            // response, closing the socket before the whole fdata arrived
+            if (errno == EPIPE || errno == ECONNRESET) {
+                break;
+            }
+            std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
+            close(fd);
+            return;
+        }
+    }
+
+    n = _write(fd, "\n", 1);
+    if (n == -1 && errno != EPIPE && errno != ECONNRESET) {
+        std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
+        close(fd);
+        return;
+    }
+
+    char res_status_buffer[CMD_SIZE + 1 + 3];
+    n = read_from_tcp_socket(fd, res_status_buffer, sizeof(res_status_buffer));
+    if (n == -1) {
+        std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
+        close(fd);
+        return;
+    }
+
+    const std::string res_status(res_status_buffer, (size_t)n);
+
+    char rest[128];
+    if (res_status == "ROA OK ") {
+        std::vector<std::string> tokens;
+        n = read_tokens_from_tcp_socket(fd, tokens, 1, AID_SIZE, true, rest);
+        close(fd);
+
+        std::string aid = tokens[0];
+        if (n != 1 || rest[0] != '\n' || !is_number(aid) ||
+            aid.length() != AID_SIZE) {
             std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
 
         std::cout << "auction successfully opened with ID " << aid << std::endl;
-    } else if (res == "ROA NOK\n") {
-        std::cout << "couldn't start auction" << std::endl;
-    } else if (res == "ROA NLG\n") {
-        std::cout << "user not logged in" << std::endl;
-    } else if (res == "ROA ERR\n") {
-        std::cout << "ERR: unable to open a new auction" << std::endl;
     } else {
-        std::cout << "ERROR: unexpected response from server" << std::endl;
+        // read the '\n'
+        n = read_from_tcp_socket(fd, rest, sizeof(rest));
+        if (n == -1) {
+            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
+            close(fd);
+            return;
+        }
+
+        close(fd);
+        if (n != 1 || rest[0] != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
+        if (res_status == "ROA NOK") {
+            std::cout << "couldn't start auction" << std::endl;
+        } else if (res_status == "ROA NLG") {
+            std::cout << "user not logged in" << std::endl;
+        } else if (res_status == "ROA ERR") {
+            std::cout << "ERR: unable to open a new auction" << std::endl;
+        } else {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+        }
     }
 }
 
