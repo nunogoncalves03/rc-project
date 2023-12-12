@@ -22,26 +22,6 @@
 
 #include "common.hpp"
 
-/**
- * @brief reads formatted input from terminal and stores it into the given
- * arguments
- *
- * @tparam Args any
- * @param args variables where to store the input
- * @return bool - whether there were leftover characters in the terminal
- */
-template <typename... Args>
-bool read_from_terminal(Args&&... args) {
-    std::string line, rest;
-    std::getline(std::cin, line, '\n');
-    std::istringstream stream(line);
-
-    (([&stream](auto&& arg) { stream >> arg; })(args), ...);
-
-    stream >> rest;
-    return rest.length() != 0;
-}
-
 struct addrinfo hints, *dns_res;
 int udp_fd;
 
@@ -914,7 +894,7 @@ void handle_show_record_response(std::string& res) {
         }
 
         if (next_char == 'B') {
-            std::cout << std::endl;
+            std::cout << "\nBids:" << std::endl;
         }
         while (next_char == 'B') {
             std::string bidder_uid, bid_value, bid_date, bid_time, bid_sec_time;
@@ -931,7 +911,7 @@ void handle_show_record_response(std::string& res) {
                 return;
             }
 
-            std::cout << bid_value << " bid by user " << bidder_uid << " at "
+            std::cout << bid_value << " - by user " << bidder_uid << " at "
                       << bid_date << " " << bid_time << " (" << bid_sec_time
                       << " seconds elapsed)" << std::endl;
 

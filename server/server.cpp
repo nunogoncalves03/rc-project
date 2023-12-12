@@ -157,7 +157,7 @@ void udp_handler() {
 
         std::string req = std::string(buffer, (size_t)n);
 
-        log_connection(address, req, false);
+        log_connection(address, req, false, true);
 
         if (n > MAX_REQ_SIZE || n < MIN_REQ_SIZE) {
             n = sendto(fd, ERROR_MSG, sizeof(ERROR_MSG) - 1, 0,
@@ -369,6 +369,7 @@ void udp_handler() {
         }
 
         send_udp_msg(fd, res, &addr, addrlen);
+        log_connection(address, res, false, false);
     }
 
     std::cout << "Shutting down UDP worker thread..." << std::endl;
@@ -516,7 +517,7 @@ void handle_tcp_request(int fd, std::string address) {
         n = read_tokens_from_tcp_socket(fd, tokens, 7, MAX_FNAME_SIZE, false,
                                         buffer);
         if (n == -1) {
-            terminate_tcp_conn(fd, "ROA ERR\n");
+            terminate_tcp_conn(fd, "ROA ERR\n", address);
             return;
         }
 
@@ -530,7 +531,7 @@ void handle_tcp_request(int fd, std::string address) {
 
         cmd += " " + uid + " " + password + " " + name + " " + start_value +
                " " + time_active + " " + asset_fname + " " + asset_fsize + "\n";
-        log_connection(address, cmd, true);
+        log_connection(address, cmd, true, true);
 
         if (!is_number(uid) || uid.length() != UID_SIZE ||
             !is_alphanumerical(password) ||
@@ -540,12 +541,12 @@ void handle_tcp_request(int fd, std::string address) {
             start_value.length() > VALUE_SIZE || !is_number(time_active) ||
             time_active.length() > DURATION_SIZE ||
             std::stoi(asset_fsize) > MAX_ASSET_FILE_SIZE_MB * MB_N_BYTES) {
-            terminate_tcp_conn(fd, "ROA ERR\n");
+            terminate_tcp_conn(fd, "ROA ERR\n", address);
             return;
         }
 
         if (buffer[0] != ' ') {
-            terminate_tcp_conn(fd, "ROA ERR\n");
+            terminate_tcp_conn(fd, "ROA ERR\n", address);
             return;
         }
 
@@ -580,7 +581,7 @@ void handle_tcp_request(int fd, std::string address) {
         n = read_tokens_from_tcp_socket(fd, tokens, 3, PASSWORD_SIZE, false,
                                         buffer);
         if (n == -1) {
-            terminate_tcp_conn(fd, "RCL ERR\n");
+            terminate_tcp_conn(fd, "RCL ERR\n", address);
             return;
         }
 
@@ -590,13 +591,13 @@ void handle_tcp_request(int fd, std::string address) {
 
         cmd += " " + uid + " " + password + " " + aid +
                std::string(buffer, (size_t)n);
-        log_connection(address, cmd, true);
+        log_connection(address, cmd, true, true);
 
         if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE || !is_number(uid) ||
             uid.length() != UID_SIZE || !is_alphanumerical(password) ||
             password.length() != PASSWORD_SIZE) {
-            terminate_tcp_conn(fd, "RCL ERR\n");
+            terminate_tcp_conn(fd, "RCL ERR\n", address);
             return;
         }
 
@@ -623,23 +624,24 @@ void handle_tcp_request(int fd, std::string address) {
         std::vector<std::string> tokens;
         n = read_tokens_from_tcp_socket(fd, tokens, 1, AID_SIZE, false, buffer);
         if (n == -1) {
-            terminate_tcp_conn(fd, "RSA ERR\n");
+            terminate_tcp_conn(fd, "RSA ERR\n", address);
             return;
         }
 
         std::string aid = tokens[0];
 
         cmd += " " + aid + std::string(buffer, (size_t)n);
-        log_connection(address, cmd, true);
+        log_connection(address, cmd, true, true);
 
         if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE) {
-            terminate_tcp_conn(fd, "RSA ERR\n");
+            terminate_tcp_conn(fd, "RSA ERR\n", address);
             return;
         }
 
         int status_code = db_lock(auction_send_asset, aid, fd);
         if (status_code == SUCCESS_CODE) {
+            log_connection(address, "RSA OK [...]\n", true, false);
             close(fd);
             return;
         } else {
@@ -652,7 +654,7 @@ void handle_tcp_request(int fd, std::string address) {
         n = read_tokens_from_tcp_socket(fd, tokens, 4, PASSWORD_SIZE, false,
                                         buffer);
         if (n == -1) {
-            terminate_tcp_conn(fd, "RBD ERR\n");
+            terminate_tcp_conn(fd, "RBD ERR\n", address);
             return;
         }
 
@@ -663,14 +665,14 @@ void handle_tcp_request(int fd, std::string address) {
 
         cmd += " " + uid + " " + password + " " + aid + " " + value +
                std::string(buffer, (size_t)n);
-        log_connection(address, cmd, true);
+        log_connection(address, cmd, true, true);
 
         if (n != 1 || buffer[0] != '\n' || !is_number(uid) ||
             uid.length() != UID_SIZE || !is_alphanumerical(password) ||
             password.length() != PASSWORD_SIZE || !is_number(aid) ||
             aid.length() != AID_SIZE || !is_number(value) ||
             value.length() > VALUE_SIZE) {
-            terminate_tcp_conn(fd, "RBD ERR\n");
+            terminate_tcp_conn(fd, "RBD ERR\n", address);
             return;
         }
 
@@ -695,15 +697,16 @@ void handle_tcp_request(int fd, std::string address) {
         }
     } else {
         cmd += " (unknown command)";
-        log_connection(address, cmd, true);
+        log_connection(address, cmd, true, true);
         res = ERROR_MSG;
     }
 
-    terminate_tcp_conn(fd, res);
+    terminate_tcp_conn(fd, res, address);
 }
 
-void terminate_tcp_conn(int fd, std::string msg) {
+void terminate_tcp_conn(int fd, std::string msg, std::string address) {
     _write(fd, msg.c_str(), msg.length());
+    log_connection(address, msg, true, false);
     close(fd);
 }
 
@@ -799,9 +802,9 @@ ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string> &tokens,
     return -1;
 }
 
-void log_connection(std::string &address, std::string &cmd, bool tcp) {
+void log_connection(const std::string &address, const std::string &cmd, bool tcp, bool received) {
     if (verbose.load()) {
         std::cout << "[" << address << "](" << (tcp ? "TCP" : "UDP")
-                  << ") received: " << cmd << std::endl;
+                  << ") " << (received ? "received: " : "sent: ") << cmd << std::endl;
     }
 }

@@ -2,6 +2,8 @@
 #define _USER_H__
 
 #include <string>
+#include <sstream>
+#include <iostream>
 
 #include "common.hpp"
 
@@ -20,6 +22,26 @@
      50 * (1 + 1 + 1 + UID_SIZE + 1 + VALUE_SIZE + 1 + DATE_TIME_SIZE + 1 +    \
            DURATION_SIZE) +                                                    \
      (1 + 1 + 1 + DATE_TIME_SIZE + 1 + DURATION_SIZE) + 1)
+
+/**
+ * @brief reads formatted input from terminal and stores it into the given
+ * arguments
+ *
+ * @tparam Args any
+ * @param args variables where to store the input
+ * @return bool - whether there were leftover characters in the terminal
+ */
+template <typename... Args>
+bool read_from_terminal(Args&&... args) {
+    std::string line, rest;
+    std::getline(std::cin, line, '\n');
+    std::istringstream stream(line);
+
+    (([&stream](auto&& arg) { stream >> arg; })(args), ...);
+
+    stream >> rest;
+    return rest.length() != 0;
+}
 
 std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size);
 std::string tcp_request(std::string& msg);
