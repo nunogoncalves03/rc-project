@@ -435,8 +435,7 @@ std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
         graceful_shutdown(1);
     }
 
-    std::string buffer_str = std::string(buffer, (size_t)n);
-    std::string res = buffer_str.substr(0, buffer_str.find('\n') + 1);
+    std::string res = std::string(buffer, (size_t)n);
 
     std::cout << "received: " << res;
 
@@ -663,107 +662,189 @@ void handle_close_response(int fd) {
 }
 
 void handle_myauctions_response(std::string& res) {
-    if (res.substr(0, res.find("OK") + 2) == "RMA OK") {
-        std::string auctions = res.substr(res.find("OK") + 3);
-        std::istringstream auctions_stream(auctions);
+    std::istringstream res_stream(res);
+    char cmd_buffer[CMD_SIZE + 1 + 3];
+    ssize_t n = res_stream.readsome(cmd_buffer, sizeof(cmd_buffer));
+    std::string cmd_status(cmd_buffer, (size_t)n);
 
-        std::string aid, state;
-        while (auctions_stream >> aid >> state) {
+    if (cmd_status == "RMA OK ") {
+        std::string output;
+        char listing_buffer[AID_SIZE + 1 + STATE_SIZE];
+
+        while (res_stream.readsome(listing_buffer, sizeof(listing_buffer)) ==
+               sizeof(listing_buffer)) {
+            std::istringstream stream(
+                std::string(listing_buffer, sizeof(listing_buffer)));
+            std::string aid, state;
+            stream >> aid;
+            if (stream.get() != ' ') {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+            stream >> state;
             if (!is_number(aid) || aid.length() != AID_SIZE ||
-                !is_number(state) || state.length() != STATE_SIZE ||
-                !(state == "0" || state == "1")) {
+                !is_number(state) || !(state == "0" || state == "1")) {
                 std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
 
-            std::cout << "auction " << aid
-                      << (state == "1" ? " (open)" : " (closed)") << std::endl;
-            aid = "";
-            state = "";
+            output += "auction " + aid +
+                      (state == "1" ? " (open)" : " (closed)") + "\n";
+
+            char c = (char)res_stream.get();
+            if (c == '\n' && res_stream.peek() == EOF) {
+                output.pop_back();
+                std::cout << output << std::endl;
+                return;
+            } else if (c == ' ' && res_stream.peek() != ' ') {
+                continue;
+            } else {
+                break;
+            }
         }
 
-        if (aid != "" || state != "") {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+    } else {
+        if (res_stream.get() != '\n' || res_stream.peek() != EOF) {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
+        if (cmd_status == "RMA NOK") {
+            std::cout << "you have not started an auction" << std::endl;
+        } else if (cmd_status == "RMA NLG") {
+            std::cout << "user not logged in" << std::endl;
+        } else if (cmd_status == "RMA ERR") {
+            std::cout << "ERR: unable to list your auctions" << std::endl;
+        } else {
             std::cout << "ERROR: unexpected response from server" << std::endl;
         }
-    } else if (res == "RMA NOK\n") {
-        std::cout << "you have no ongoing auctions" << std::endl;
-    } else if (res == "RMA NLG\n") {
-        std::cout << "user not logged in" << std::endl;
-    } else if (res == "RMA ERR\n") {
-        std::cout << "ERR: unable to list your auctions" << std::endl;
-    } else {
-        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
 void handle_mybids_response(std::string& res) {
-    if (res.substr(0, res.find("OK") + 2) == "RMB OK") {
-        std::string auctions = res.substr(res.find("OK") + 3);
-        std::istringstream auctions_stream(auctions);
+    std::istringstream res_stream(res);
+    char cmd_buffer[CMD_SIZE + 1 + 3];
+    ssize_t n = res_stream.readsome(cmd_buffer, sizeof(cmd_buffer));
+    std::string cmd_status(cmd_buffer, (size_t)n);
 
-        std::string aid, state;
-        while (auctions_stream >> aid >> state) {
+    if (cmd_status == "RMB OK ") {
+        std::string output;
+        char listing_buffer[AID_SIZE + 1 + STATE_SIZE];
+
+        while (res_stream.readsome(listing_buffer, sizeof(listing_buffer)) ==
+               sizeof(listing_buffer)) {
+            std::istringstream stream(
+                std::string(listing_buffer, sizeof(listing_buffer)));
+            std::string aid, state;
+            stream >> aid;
+            if (stream.get() != ' ') {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+            stream >> state;
             if (!is_number(aid) || aid.length() != AID_SIZE ||
-                !is_number(state) || state.length() != STATE_SIZE ||
-                !(state == "0" || state == "1")) {
+                !is_number(state) || !(state == "0" || state == "1")) {
                 std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
 
-            std::cout << "auction " << aid
-                      << (state == "1" ? " (open)" : " (closed)") << std::endl;
+            output += "auction " + aid +
+                      (state == "1" ? " (open)" : " (closed)") + "\n";
 
-            aid = "";
-            state = "";
+            char c = (char)res_stream.get();
+            if (c == '\n' && res_stream.peek() == EOF) {
+                output.pop_back();
+                std::cout << output << std::endl;
+                return;
+            } else if (c == ' ' && res_stream.peek() != ' ') {
+                continue;
+            } else {
+                break;
+            }
         }
 
-        if (aid != "" || state != "") {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+    } else {
+        if (res_stream.get() != '\n' || res_stream.peek() != EOF) {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
+        if (cmd_status == "RMB NOK") {
+            std::cout << "you have no registered bids" << std::endl;
+        } else if (cmd_status == "RMB NLG") {
+            std::cout << "user not logged in" << std::endl;
+        } else if (cmd_status == "RMB ERR") {
+            std::cout << "ERR: unable to list your bids" << std::endl;
+        } else {
             std::cout << "ERROR: unexpected response from server" << std::endl;
         }
-    } else if (res == "RMB NOK\n") {
-        std::cout << "you have no ongoing bids" << std::endl;
-    } else if (res == "RMB NLG\n") {
-        std::cout << "user not logged in" << std::endl;
-    } else if (res == "RMB ERR\n") {
-        std::cout << "ERR: unable to list your bids" << std::endl;
-    } else {
-        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
 void handle_list_response(std::string& res) {
-    if (res.substr(0, res.find("OK") + 2) == "RLS OK") {
-        std::string auctions = res.substr(res.find("OK") + 3);
-        std::istringstream auctions_stream(auctions);
+    std::istringstream res_stream(res);
+    char cmd_buffer[CMD_SIZE + 1 + 3];
+    ssize_t n = res_stream.readsome(cmd_buffer, sizeof(cmd_buffer));
+    std::string cmd_status(cmd_buffer, (size_t)n);
 
-        std::string aid, state;
-        while (auctions_stream >> aid >> state) {
+    if (cmd_status == "RLS OK ") {
+        std::string output;
+        char listing_buffer[AID_SIZE + 1 + STATE_SIZE];
+
+        while (res_stream.readsome(listing_buffer, sizeof(listing_buffer)) ==
+               sizeof(listing_buffer)) {
+            std::istringstream stream(
+                std::string(listing_buffer, sizeof(listing_buffer)));
+            std::string aid, state;
+            stream >> aid;
+            if (stream.get() != ' ') {
+                std::cout << "ERROR: unexpected response from server"
+                          << std::endl;
+                return;
+            }
+            stream >> state;
             if (!is_number(aid) || aid.length() != AID_SIZE ||
-                !is_number(state) || state.length() != STATE_SIZE ||
-                !(state == "0" || state == "1")) {
+                !is_number(state) || !(state == "0" || state == "1")) {
                 std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
 
-            std::cout << "auction " << aid
-                      << (state == "1" ? " (open)" : " (closed)") << std::endl;
+            output += "auction " + aid +
+                      (state == "1" ? " (open)" : " (closed)") + "\n";
 
-            aid = "";
-            state = "";
+            char c = (char)res_stream.get();
+            if (c == '\n' && res_stream.peek() == EOF) {
+                output.pop_back();
+                std::cout << output << std::endl;
+                return;
+            } else if (c == ' ' && res_stream.peek() != ' ') {
+                continue;
+            } else {
+                break;
+            }
         }
 
-        if (aid != "" || state != "") {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+    } else {
+        if (res_stream.get() != '\n' || res_stream.peek() != EOF) {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
+        if (cmd_status == "RLS NOK") {
+            std::cout << "no auctions were started yet" << std::endl;
+        } else if (cmd_status == "RLS ERR") {
+            std::cout << "ERR: unable to list auctions" << std::endl;
+        } else {
             std::cout << "ERROR: unexpected response from server" << std::endl;
         }
-    } else if (res == "RLS NOK\n") {
-        std::cout << "there are no ongoing auctions" << std::endl;
-    } else if (res == "RLS ERR\n") {
-        std::cout << "ERR: unable to list ongoing auctions" << std::endl;
-    } else {
-        std::cout << "ERROR: unexpected response from server" << std::endl;
     }
 }
 
@@ -934,14 +1015,41 @@ void handle_bid_response(int fd) {
 }
 
 void handle_show_record_response(std::string& res) {
-    if (res.substr(0, res.find("OK") + 2) == "RRC OK") {
-        std::string record = res.substr(res.find("OK") + 3);
-        std::istringstream record_stream(record);
+    std::istringstream res_stream(res);
+    char cmd_buffer[CMD_SIZE + 1 + 3];
+    ssize_t n = res_stream.readsome(cmd_buffer, sizeof(cmd_buffer));
+    std::string cmd_status(cmd_buffer, (size_t)n);
+    std::string output;
 
+    if (cmd_status == "RRC OK ") {
         std::string host_uid, auction_name, asset_fname, start_value,
             start_date, start_time, time_active;
-        record_stream >> host_uid >> auction_name >> asset_fname >>
-            start_value >> start_date >> start_time >> time_active;
+        std::vector<std::string*> tokens = {
+            &host_uid,   &auction_name, &asset_fname, &start_value,
+            &start_date, &start_time,   &time_active};
+
+        int c;
+        for (size_t i = 0; i < tokens.size(); i++) {
+            std::string& token = *(tokens[i]);
+            c = res_stream.peek();
+            if (c == ' ' || c == '\n' || c == EOF) {
+                std::cout << "ERROR: unexpected response from server 1"
+                          << std::endl;
+                return;
+            }
+
+            res_stream >> token;
+
+            if (i < tokens.size() - 1 && res_stream.get() != ' ') {
+                std::cout << "ERROR: unexpected response from server 2"
+                          << std::endl;
+                return;
+            }
+        }
+
+        std::cout << host_uid << " " << auction_name << " " << asset_fname
+                  << " " << start_value << " " << start_date << " "
+                  << start_time << " " << time_active << std::endl;
 
         if (!is_number(host_uid) || host_uid.length() != UID_SIZE ||
             !is_alphanumerical(auction_name, "-_") ||
@@ -951,99 +1059,138 @@ void handle_show_record_response(std::string& res) {
             start_date.length() != DATE_SIZE ||
             start_time.length() != TIME_SIZE || !is_number(time_active) ||
             time_active.length() > DURATION_SIZE) {
-            std::cout << "ERROR: unexpected response from server" << std::endl;
+            std::cout << "ERROR: unexpected response from server 3"
+                      << std::endl;
             return;
         }
 
-        std::cout << auction_name << " - hosted by " << host_uid << std::endl;
-        std::cout << "asset filename: " << asset_fname << std::endl;
-        std::cout << "start value: " << start_value << std::endl;
-        std::cout << "started at: " << start_date << " " << start_time
-                  << std::endl;
-        std::cout << "duration: " << time_active << " seconds" << std::endl;
+        output += auction_name + " - hosted by " + host_uid + "\n";
+        output += "asset filename: " + asset_fname + "\n";
+        output += "start value: " + start_value + "\n";
+        output += "started at: " + start_date + " " + start_time + "\n";
+        output += "duration: " + time_active + " seconds" + "\n";
 
-        char next_char = (char)record_stream.get();
-
-        if (next_char == '\n') return;
-
-        if (next_char != ' ') {
-            std::cout << "ERROR: unexpected response from server" << std::endl;
+        c = res_stream.get();
+        if (c == '\n' && res_stream.peek() == EOF) {
+            output.pop_back();
+            std::cout << output << std::endl;
+            return;
+        } else if (c != ' ') {
+            std::cout << "ERROR: unexpected response from server 4"
+                      << std::endl;
             return;
         }
 
-        next_char = (char)record_stream.get();
-
-        if (next_char != 'B' && next_char != 'E') {
-            std::cout << "ERROR: unexpected response from server" << std::endl;
+        c = res_stream.get();
+        if (c != 'B' && c != 'E') {
+            std::cout << "ERROR: unexpected response from server 5"
+                      << std::endl;
             return;
         }
 
-        if (next_char == 'B') {
-            std::cout << "\nBids:" << std::endl;
+        if (c == 'B') {
+            output += "\nBids:\n";
         }
-        while (next_char == 'B') {
+        while (c == 'B') {
             std::string bidder_uid, bid_value, bid_date, bid_time, bid_sec_time;
-            record_stream >> bidder_uid >> bid_value >> bid_date >> bid_time >>
-                bid_sec_time;
+            tokens = {&bidder_uid, &bid_value, &bid_date, &bid_time,
+                      &bid_sec_time};
+
+            for (size_t i = 0; i < tokens.size(); i++) {
+                std::string& token = *(tokens[i]);
+                c = res_stream.get();
+                if (c != ' ' || res_stream.peek() == ' ' ||
+                    res_stream.peek() == '\n' || res_stream.peek() == EOF) {
+                    std::cout << "ERROR: unexpected response from server 6"
+                              << std::endl;
+                    return;
+                }
+                res_stream >> token;
+            }
 
             if (!is_number(bidder_uid) || bidder_uid.length() != UID_SIZE ||
                 !is_number(bid_value) || bid_value.length() > VALUE_SIZE ||
                 bid_date.length() != DATE_SIZE ||
                 bid_time.length() != TIME_SIZE || !is_number(bid_sec_time) ||
                 bid_sec_time.length() > DURATION_SIZE) {
-                std::cout << "ERROR: unexpected response from server"
+                std::cout << "ERROR: unexpected response from server 7"
                           << std::endl;
                 return;
             }
 
-            std::cout << bid_value << " - by user " << bidder_uid << " at "
-                      << bid_date << " " << bid_time << " (" << bid_sec_time
-                      << " seconds elapsed)" << std::endl;
+            output += bid_value + " - by user " + bidder_uid + " at " +
+                      bid_date + " " + bid_time + " (" + bid_sec_time +
+                      " seconds elapsed)\n";
 
-            next_char = (char)record_stream.get();
-            if (next_char == ' ') {
-                next_char = (char)record_stream.get();
-                if (next_char != 'B' && next_char != 'E') {
-                    std::cout << "ERROR: unexpected response from server"
+            c = res_stream.get();
+            if (c == ' ') {
+                c = res_stream.get();
+                if (c != 'B' && c != 'E') {
+                    std::cout << "ERROR: unexpected response from server 8"
                               << std::endl;
                     return;
                 }
-            } else if (next_char != '\n') {
-                std::cout << "ERROR: unexpected response from server"
+            } else if (c == '\n' && res_stream.peek() == EOF) {
+                output.pop_back();
+                std::cout << output << std::endl;
+                return;
+            } else {
+                std::cout << "ERROR: unexpected response from server 9"
                           << std::endl;
                 return;
             }
         }
 
-        if (next_char == 'E') {
+        if (c == 'E') {
             std::string end_date, end_time, end_sec_time;
-            record_stream >> end_date >> end_time >> end_sec_time;
+            tokens = {&end_date, &end_time, &end_sec_time};
+
+            for (size_t i = 0; i < tokens.size(); i++) {
+                std::string& token = *(tokens[i]);
+                c = res_stream.get();
+                if (c != ' ' || res_stream.peek() == ' ' ||
+                    res_stream.peek() == '\n' || res_stream.peek() == EOF) {
+                    std::cout << "ERROR: unexpected response from server 10"
+                              << std::endl;
+                    return;
+                }
+                res_stream >> token;
+            }
 
             if (end_date.length() != DATE_SIZE ||
                 end_time.length() != TIME_SIZE || !is_number(end_sec_time) ||
                 end_sec_time.length() > DURATION_SIZE) {
-                std::cout << "ERROR: unexpected response from server"
+                std::cout << "ERROR: unexpected response from server 11"
                           << std::endl;
                 return;
             }
 
-            std::cout << "\nauction ended at " << end_date << " " << end_time
-                      << " (" << end_sec_time << " seconds elapsed)"
-                      << std::endl;
+            output += "\nauction ended at " + end_date + " " + end_time + " (" +
+                      end_sec_time + " seconds elapsed)\n";
 
-            next_char = (char)record_stream.get();
+            if (res_stream.get() == '\n' && res_stream.peek() == EOF) {
+                output.pop_back();
+                std::cout << output << std::endl;
+            } else {
+                std::cout << "ERROR: unexpected response from server 12"
+                          << std::endl;
+            }
         }
-
-        if (next_char != '\n') {
-            std::cout << "ERROR: unexpected response from server" << std::endl;
+    } else {
+        if (res_stream.get() != '\n' || res_stream.peek() != EOF) {
+            std::cout << "ERROR: unexpected response from server 13"
+                      << std::endl;
             return;
         }
-    } else if (res == "RRC NOK\n") {
-        std::cout << "there's no auction with the given id" << std::endl;
-    } else if (res == "RRC ERR\n") {
-        std::cout << "ERR: unable to show the record" << std::endl;
-    } else {
-        std::cout << "ERROR: unexpected response from server" << std::endl;
+
+        if (cmd_status == "RRC NOK") {
+            std::cout << "there's no auction with the given id" << std::endl;
+        } else if (cmd_status == "RRC ERR") {
+            std::cout << "ERR: unable to show the record" << std::endl;
+        } else {
+            std::cout << "ERROR: unexpected response from server 14"
+                      << std::endl;
+        }
     }
 }
 
