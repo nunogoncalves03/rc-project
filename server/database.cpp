@@ -504,9 +504,11 @@ int auction_store_asset(std::string aid, int socket_fd, std::string asset_fname,
             if (n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
                 std::cout << "TCP timeout occurred while reading asset"
                           << std::endl;
+            } else {
+                std::cout << "ERROR: couldn't read from TCP socket"
+                          << std::endl;
             }
 
-            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             return ERROR_CODE;
         }
 

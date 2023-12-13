@@ -44,7 +44,7 @@ bool read_from_terminal(Args&&... args) {
 }
 
 std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size);
-std::string tcp_request(std::string& msg);
+int send_tcp_request(std::string& msg);
 
 void handle_login_response(std::string& res, std::string& uid_,
                            std::string& password_);
@@ -52,12 +52,12 @@ void handle_logout_response(std::string& res);
 void handle_unregister_response(std::string& res);
 void handle_open_request(std::string& msg, std::string& asset_path,
                          ssize_t asset_fsize);
-void handle_close_response(std::string& res);
+void handle_close_response(int fd);
 void handle_myauctions_response(std::string& res);
 void handle_mybids_response(std::string& res);
 void handle_list_response(std::string& res);
-void handle_show_asset_request(std::string& msg);
-void handle_bid_response(std::string& res);
+void handle_show_asset_response(int fd);
+void handle_bid_response(int fd);
 void handle_show_record_response(std::string& res);
 
 void graceful_shutdown(int code);

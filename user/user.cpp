@@ -278,8 +278,11 @@ int main(int argc, char** argv) {
 
             msg = "CLS " + uid + " " + password + " " + aid + "\n";
 
-            std::string res = tcp_request(msg);
-            handle_close_response(res);
+            int fd = send_tcp_request(msg);
+            if (fd == -1) {
+                continue;
+            }
+            handle_close_response(fd);
         } else if (cmd == "myauctions" || cmd == "ma") {
             const bool left_over_chars = read_from_terminal();
 
@@ -345,7 +348,11 @@ int main(int argc, char** argv) {
 
             msg = "SAS " + aid + "\n";
 
-            handle_show_asset_request(msg);
+            int fd = send_tcp_request(msg);
+            if (fd == -1) {
+                continue;
+            }
+            handle_show_asset_response(fd);
         } else if (cmd == "bid" || cmd == "b") {
             std::string aid, value;
             const bool left_over_chars = read_from_terminal(aid, value);
@@ -376,8 +383,11 @@ int main(int argc, char** argv) {
             msg =
                 "BID " + uid + " " + password + " " + aid + " " + value + "\n";
 
-            std::string res = tcp_request(msg);
-            handle_bid_response(res);
+            int fd = send_tcp_request(msg);
+            if (fd == -1) {
+                continue;
+            }
+            handle_bid_response(fd);
         } else if (cmd == "show_record" || cmd == "sr") {
             std::string aid;
             const bool left_over_chars = read_from_terminal(aid);
@@ -433,7 +443,7 @@ std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
     return res;
 }
 
-std::string tcp_request(std::string& msg) {
+int send_tcp_request(std::string& msg) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
         std::cout << "ERROR: couldn't open TCP socket" << std::endl;
@@ -448,48 +458,24 @@ std::string tcp_request(std::string& msg) {
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
         std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
-        exit(1);
+        graceful_shutdown(1);
     }
 
     ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
         std::cout << "ERROR: couldn't perform TCP socket connect" << std::endl;
-        graceful_shutdown(1);
+        return -1;
     }
 
     n = _write(fd, msg.c_str(), msg.length());
     if (n == -1) {
         std::cout << "ERROR: couldn't send TCP message" << std::endl;
-        graceful_shutdown(1);
+        return -1;
     }
 
     std::cout << "sent: " << msg;
 
-    char buffer[128];
-    std::string res;
-    // Reads from the socket in 128 Bytes chunks
-    while (true) {
-        n = _read(fd, buffer, 128);
-        if (n == -1) {
-            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
-            graceful_shutdown(1);
-        }
-
-        std::string buffer_str = std::string(buffer, (size_t)n);
-        // Check if the response has ended, that is, if the '\n' char is present
-        if (buffer_str.find('\n') == std::string::npos) {
-            res += buffer_str;
-        } else {
-            res += buffer_str.substr(0, buffer_str.find('\n') + 1);
-            break;
-        }
-    }
-
-    std::cout << "received: " << res;
-
-    close(fd);
-
-    return res;
+    return fd;
 }
 
 void handle_login_response(std::string& res, std::string& uid_,
@@ -545,43 +531,20 @@ void handle_unregister_response(std::string& res) {
 
 void handle_open_request(std::string& msg, std::string& asset_path,
                          ssize_t asset_fsize) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    int fd = send_tcp_request(msg);
     if (fd == -1) {
-        std::cout << "ERROR: couldn't open TCP socket" << std::endl;
-        graceful_shutdown(1);
-    }
-
-    struct timeval timeout;
-    timeout.tv_sec = 10;
-    timeout.tv_usec = 0;
-
-    // Set socket timeout for both reads and writes
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
-        std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
-        exit(1);
-    }
-
-    ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
-    if (n == -1) {
-        std::cout << "ERROR: couldn't perform TCP socket connect" << std::endl;
-        graceful_shutdown(1);
-    }
-
-    _write(fd, msg.c_str(), msg.length());
-    if (n == -1) {
-        std::cout << "ERROR: couldn't send TCP message" << std::endl;
-        close(fd);
         return;
     }
 
     std::ifstream asset_file(asset_path);
     if (!asset_file.is_open()) {
         std::cout << "couldn't open file " << asset_path << std::endl;
+        close(fd);
         graceful_shutdown(1);
     }
 
     char fdata_buffer[512];
+    ssize_t n;
     ssize_t nleft = asset_fsize;
     while (nleft > 0) {
         ssize_t n_to_write = nleft < 512 ? nleft : 512;
@@ -624,6 +587,11 @@ void handle_open_request(std::string& msg, std::string& asset_path,
         n = read_tokens_from_tcp_socket(fd, tokens, 1, AID_SIZE, true, rest);
         close(fd);
 
+        if (n == -1) {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
         std::string aid = tokens[0];
         if (n != 1 || rest[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE) {
@@ -635,13 +603,12 @@ void handle_open_request(std::string& msg, std::string& asset_path,
     } else {
         // read the '\n'
         n = read_from_tcp_socket(fd, rest, sizeof(rest));
+        close(fd);
         if (n == -1) {
             std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
-            close(fd);
             return;
         }
 
-        close(fd);
         if (n != 1 || rest[0] != '\n') {
             std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
@@ -659,18 +626,36 @@ void handle_open_request(std::string& msg, std::string& asset_path,
     }
 }
 
-void handle_close_response(std::string& res) {
-    if (res == "RCL OK\n") {
+void handle_close_response(int fd) {
+    char rest[128];
+    std::vector<std::string> tokens;
+    ssize_t n =
+        read_tokens_from_tcp_socket(fd, tokens, 2, CMD_SIZE, true, rest);
+    close(fd);
+
+    if (n == -1) {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+        return;
+    }
+
+    std::string cmd = tokens[0];
+    std::string status = tokens[1];
+    if (n != 1 || rest[0] != '\n' || cmd != "RCL") {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+        return;
+    }
+
+    if (status == "OK") {
         std::cout << "auction successfully closed" << std::endl;
-    } else if (res == "RCL EAU\n") {
+    } else if (status == "EAU") {
         std::cout << "auction doesn't exist" << std::endl;
-    } else if (res == "RCL EOW\n") {
+    } else if (status == "EOW") {
         std::cout << "auctions can only be closed by the owners" << std::endl;
-    } else if (res == "RCL END\n") {
+    } else if (status == "END") {
         std::cout << "auction is already closed" << std::endl;
-    } else if (res == "RCL NLG\n") {
+    } else if (status == "NLG") {
         std::cout << "user not logged in" << std::endl;
-    } else if (res == "RCL ERR\n") {
+    } else if (status == "ERR") {
         std::cout << "ERR: unable to close the auction" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
@@ -782,91 +767,56 @@ void handle_list_response(std::string& res) {
     }
 }
 
-void handle_show_asset_request(std::string& msg) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd == -1) {
-        std::cout << "ERROR: couldn't open TCP socket" << std::endl;
-        graceful_shutdown(1);
-    }
-
-    struct timeval timeout;
-    timeout.tv_sec = 10;
-    timeout.tv_usec = 0;
-
-    // Set socket timeout for both reads and writes
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
-        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
-        std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
-        graceful_shutdown(1);
-    }
-
-    ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
-    if (n == -1) {
-        std::cout << "ERROR: couldn't perform TCP socket connect" << std::endl;
-        graceful_shutdown(1);
-    }
-
-    n = _write(fd, msg.c_str(), msg.length());
-    if (n == -1) {
-        std::cout << "ERROR: couldn't send TCP message" << std::endl;
-        graceful_shutdown(1);
-    }
-
-    std::cout << "sent: " << msg;
-
+void handle_show_asset_response(int fd) {
     char res_status_buffer[CMD_SIZE + 1 + 3];
 
-    n = read_from_tcp_socket(fd, res_status_buffer, sizeof(res_status_buffer));
+    ssize_t n =
+        read_from_tcp_socket(fd, res_status_buffer, sizeof(res_status_buffer));
     if (n == -1) {
         std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
-        graceful_shutdown(1);
+        close(fd);
+        return;
     }
 
     std::string res = std::string(res_status_buffer, (size_t)n);
 
     std::cout << "received: " << res;
 
+    char rest[128];
     if (res == "RSA OK ") {
-        char file_info_buffer[MAX_FNAME_SIZE + MAX_FSIZE_SIZE + 2];
-
-        n = read_from_tcp_socket(fd, file_info_buffer,
-                                 sizeof(file_info_buffer));
+        std::vector<std::string> tokens;
+        n = read_tokens_from_tcp_socket(fd, tokens, 2, MAX_FNAME_SIZE, true,
+                                        rest);
         if (n == -1) {
-            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
-            graceful_shutdown(1);
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            close(fd);
+            return;
         }
 
-        std::string fname, fsize;
-        std::string file_info = std::string(file_info_buffer, (size_t)n);
-        std::istringstream file_info_stream(file_info);
-
-        file_info_stream >> fname >> fsize;
-        std::cout << fname << " " << fsize << std::endl;
+        std::string fname = tokens[0];
+        std::string fsize = tokens[1];
 
         if (!is_valid_filename(fname) || !is_number(fsize) ||
             fsize.length() > MAX_FSIZE_SIZE) {
             std::cout << "ERROR: unexpected response from server" << std::endl;
+            close(fd);
             return;
         }
 
-        // Find the starting index of the fdata in the read chunk
-        size_t fdata_idx = fsize.length() + fname.length() + 2;
-        // The size of the fdata portion included in the chunk
-        size_t fdata_portion_size;
-        if ((size_t)n - fdata_idx >= (size_t)std::stoi(fsize)) {
-            // the whole file (all the fdata) is in the chunk
-            fdata_portion_size = (size_t)std::stoi(fsize);
-        } else {
-            // only a part of it was read
-            fdata_portion_size = (size_t)n - fdata_idx;
+        if (rest[0] != ' ') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            close(fd);
+            return;
         }
-        char fdata_portion[fdata_portion_size];
-        memcpy(fdata_portion, file_info.c_str() + fdata_idx,
-               sizeof(fdata_portion));
+
+        char* fdata_portion = n == 1 ? rest : rest + 1;
+
+        std::cout << fname << " " << fsize << std::endl;
 
         if (!std::filesystem::exists("./assets/")) {
             if (!std::filesystem::create_directory("./assets/")) {
                 std::cerr << "Error creating directory: ./assets/" << std::endl;
+                close(fd);
                 graceful_shutdown(1);
             }
         }
@@ -874,55 +824,109 @@ void handle_show_asset_request(std::string& msg) {
         std::ofstream asset_file("./assets/" + fname);
         if (!asset_file.is_open()) {
             std::cout << "couldn't create file " << fname << std::endl;
+            close(fd);
             graceful_shutdown(1);
         }
-        asset_file.write(fdata_portion, (ssize_t)sizeof(fdata_portion));
 
-        char fdata_buffer[512];
-        ssize_t nleft =
-            (ssize_t)(((size_t)std::stoi(fsize)) - sizeof(fdata_portion));
-        while (nleft > 0) {
-            n = _read(fd, fdata_buffer, 512);
-            if (n == -1) {
-                std::cout << "ERROR: couldn't read from TCP socket"
-                          << std::endl;
-                graceful_shutdown(1);
+        ssize_t portion_size = n - 1;
+        if (portion_size >= std::stoi(fsize)) {
+            asset_file.write(fdata_portion, std::stoi(fsize));
+        } else {
+            asset_file.write(fdata_portion, portion_size);
+
+            char fdata_buffer[512];
+            ssize_t nleft = (ssize_t)std::stoi(fsize) - portion_size;
+            while (nleft > 0) {
+                n = _read(fd, fdata_buffer, 512);
+                if (n == -1 || n == 0) {
+                    if (n == -1 && (errno == EWOULDBLOCK || errno == EAGAIN)) {
+                        std::cout << "TCP timeout occurred while reading asset"
+                                  << std::endl;
+                    } else {
+                        std::cout << "ERROR: couldn't read from TCP socket"
+                                  << std::endl;
+                    }
+
+                    close(fd);
+                    asset_file.close();
+
+                    if (!std::filesystem::remove("./assets/" + fname)) {
+                        std::cerr << "Error removing file: ./assets/" << fname
+                                  << std::endl;
+                        graceful_shutdown(1);
+                    }
+
+                    return;
+                }
+
+                // in the last read, the '\n' will be included, but it isn't
+                // part of the file
+                ssize_t n_to_write = nleft < n ? nleft : n;
+                asset_file.write(fdata_buffer, n_to_write);
+                nleft -= n_to_write;
             }
-
-            // in the last read, the '\n' will be included, but it isn't part of
-            // the file
-            ssize_t n_to_write = nleft < n ? nleft : n;
-            asset_file.write(fdata_buffer, n_to_write);
-            nleft -= n_to_write;
         }
 
+        close(fd);
         asset_file.close();
         std::cout << "asset saved in ./assets/" << fname << std::endl;
-
-        close(fd);
-    } else if (res == "RSA NOK") {
-        std::cout << "there's no file associated with the auction or some "
-                     "internal error occurred"
-                  << std::endl;
-    } else if (res == "RSA ERR\n") {
-        std::cout << "ERR: unable to download the asset" << std::endl;
     } else {
-        std::cout << "ERROR: unexpected response from server" << std::endl;
+        // read the '\n'
+        n = read_from_tcp_socket(fd, rest, sizeof(rest));
+        close(fd);
+        if (n == -1) {
+            std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
+            return;
+        }
+
+        if (n != 1 || rest[0] != '\n') {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+            return;
+        }
+
+        if (res == "RSA NOK") {
+            std::cout << "auction doesn't exist, there's no file associated "
+                         "with the auction or some "
+                         "internal error occurred"
+                      << std::endl;
+        } else if (res == "RSA ERR") {
+            std::cout << "ERR: unable to download the asset" << std::endl;
+        } else {
+            std::cout << "ERROR: unexpected response from server" << std::endl;
+        }
     }
 }
 
-void handle_bid_response(std::string& res) {
-    if (res == "RBD ACC\n") {
+void handle_bid_response(int fd) {
+    char rest[128];
+    std::vector<std::string> tokens;
+    ssize_t n =
+        read_tokens_from_tcp_socket(fd, tokens, 2, CMD_SIZE, true, rest);
+    close(fd);
+
+    if (n == -1) {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+        return;
+    }
+
+    std::string cmd = tokens[0];
+    std::string status = tokens[1];
+    if (n != 1 || rest[0] != '\n' || cmd != "RBD") {
+        std::cout << "ERROR: unexpected response from server" << std::endl;
+        return;
+    }
+
+    if (status == "ACC") {
         std::cout << "bid registered successfully" << std::endl;
-    } else if (res == "RBD REF\n") {
+    } else if (status == "REF") {
         std::cout << "there's already been placed a higher bid" << std::endl;
-    } else if (res == "RBD NOK\n") {
+    } else if (status == "NOK") {
         std::cout << "auction no longer active" << std::endl;
-    } else if (res == "RBD NLG\n") {
+    } else if (status == "NLG") {
         std::cout << "user not logged in" << std::endl;
-    } else if (res == "RBD ILG\n") {
+    } else if (status == "ILG") {
         std::cout << "you can't bid on your own auction" << std::endl;
-    } else if (res == "RBD ERR\n") {
+    } else if (status == "ERR") {
         std::cout << "ERR: unable to bid" << std::endl;
     } else {
         std::cout << "ERROR: unexpected response from server" << std::endl;
