@@ -142,42 +142,34 @@ void udp_handler() {
             }
         }
 
-        char ip_str[addrlen + 1];
-        std::string address;
-        // Convert binary IP address to string
-        if (inet_ntop(AF_INET, &(addr.sin_addr), ip_str, addrlen) != NULL) {
-            // Convert port number to host byte order
-            int port = ntohs(addr.sin_port);
-
-            address = std::string(ip_str) + ":" + std::to_string(port);
-        } else {
-            std::cerr << "Couldn't convert IP to string" << std::endl;
-            address = "ERR";
-        }
-
         std::string req = std::string(buffer, (size_t)n);
-
-        log_connection(address, req, false, true);
+        log_udp_msg(&addr, addrlen, req, true);
 
         if (n > MAX_REQ_SIZE || n < MIN_REQ_SIZE) {
-            n = sendto(fd, ERROR_MSG, sizeof(ERROR_MSG) - 1, 0,
-                       (struct sockaddr *)&addr, addrlen);
-            if (n == -1) {
-                std::cerr << "Couldn't send UDP msg" << std::endl;
-            }
+            send_udp_msg(fd, ERROR_MSG, &addr, addrlen);
             continue;
         }
 
-        std::string cmd, res;
+        std::string res;
         std::istringstream req_stream(req);
-        req_stream >> cmd;
+        std::vector<std::string> tokens;
+        if (!read_tokens(req_stream, tokens, 1, false) && req != "LST\n") {
+            send_udp_msg(fd, ERROR_MSG, &addr, addrlen);
+            continue;
+        }
+        std::string cmd = tokens[0];
 
         if (cmd == "LIN") {
-            std::string uid, password;
-            req_stream >> uid >> password;
+            if (!read_tokens(req_stream, tokens, 2, true)) {
+                send_udp_msg(fd, "RLI ERR\n", &addr, addrlen);
+                continue;
+            }
 
-            if (req_stream.get() != '\n' || !is_number(uid) ||
-                uid.length() != UID_SIZE || !is_alphanumerical(password) ||
+            std::string uid = tokens[1];
+            std::string password = tokens[2];
+
+            if (!is_number(uid) || uid.length() != UID_SIZE ||
+                !is_alphanumerical(password) ||
                 password.length() != PASSWORD_SIZE) {
                 send_udp_msg(fd, "RLI ERR\n", &addr, addrlen);
                 continue;
@@ -203,11 +195,16 @@ void udp_handler() {
                 res = "RLI NOK\n";  // FIXME
             }
         } else if (cmd == "LOU") {
-            std::string uid, password;
-            req_stream >> uid >> password;
+            if (!read_tokens(req_stream, tokens, 2, true)) {
+                send_udp_msg(fd, "RLO ERR\n", &addr, addrlen);
+                continue;
+            }
 
-            if (req_stream.get() != '\n' || !is_number(uid) ||
-                uid.length() != UID_SIZE || !is_alphanumerical(password) ||
+            std::string uid = tokens[1];
+            std::string password = tokens[2];
+
+            if (!is_number(uid) || uid.length() != UID_SIZE ||
+                !is_alphanumerical(password) ||
                 password.length() != PASSWORD_SIZE) {
                 send_udp_msg(fd, "RLO ERR\n", &addr, addrlen);
                 continue;
@@ -224,11 +221,16 @@ void udp_handler() {
                 res = "RLO NOK\n";  // FIXME
             }
         } else if (cmd == "UNR") {
-            std::string uid, password;
-            req_stream >> uid >> password;
+            if (!read_tokens(req_stream, tokens, 2, true)) {
+                send_udp_msg(fd, "RUR ERR\n", &addr, addrlen);
+                continue;
+            }
 
-            if (req_stream.get() != '\n' || !is_number(uid) ||
-                uid.length() != UID_SIZE || !is_alphanumerical(password) ||
+            std::string uid = tokens[1];
+            std::string password = tokens[2];
+
+            if (!is_number(uid) || uid.length() != UID_SIZE ||
+                !is_alphanumerical(password) ||
                 password.length() != PASSWORD_SIZE) {
                 send_udp_msg(fd, "RUR ERR\n", &addr, addrlen);
                 continue;
@@ -245,11 +247,14 @@ void udp_handler() {
                 res = "RUR NOK\n";  // FIXME
             }
         } else if (cmd == "LMA") {
-            std::string uid;
-            req_stream >> uid;
+            if (!read_tokens(req_stream, tokens, 1, true)) {
+                send_udp_msg(fd, "RMA ERR\n", &addr, addrlen);
+                continue;
+            }
 
-            if (req_stream.get() != '\n' || !is_number(uid) ||
-                uid.length() != UID_SIZE) {
+            std::string uid = tokens[1];
+
+            if (!is_number(uid) || uid.length() != UID_SIZE) {
                 send_udp_msg(fd, "RMA ERR\n", &addr, addrlen);
                 continue;
             }
@@ -274,11 +279,14 @@ void udp_handler() {
                 res = "RMA NOK\n";  // FIXME
             }
         } else if (cmd == "LMB") {
-            std::string uid;
-            req_stream >> uid;
+            if (!read_tokens(req_stream, tokens, 1, true)) {
+                send_udp_msg(fd, "RMB ERR\n", &addr, addrlen);
+                continue;
+            }
 
-            if (req_stream.get() != '\n' || !is_number(uid) ||
-                uid.length() != UID_SIZE) {
+            std::string uid = tokens[1];
+
+            if (!is_number(uid) || uid.length() != UID_SIZE) {
                 send_udp_msg(fd, "RMB ERR\n", &addr, addrlen);
                 continue;
             }
@@ -303,7 +311,7 @@ void udp_handler() {
                 res = "RMB NOK\n";  // FIXME
             }
         } else if (cmd == "LST") {
-            if (req_stream.get() != '\n') {
+            if (req != "LST\n") {
                 send_udp_msg(fd, "RLS ERR\n", &addr, addrlen);
                 continue;
             }
@@ -325,11 +333,14 @@ void udp_handler() {
                 res = "RLS NOK\n";  // FIXME
             }
         } else if (cmd == "SRC") {
-            std::string aid;
-            req_stream >> aid;
+            if (!read_tokens(req_stream, tokens, 1, true)) {
+                send_udp_msg(fd, "RRC ERR\n", &addr, addrlen);
+                continue;
+            }
 
-            if (req_stream.get() != '\n' || !is_number(aid) ||
-                aid.length() != AID_SIZE) {
+            std::string aid = tokens[1];
+
+            if (!is_number(aid) || aid.length() != AID_SIZE) {
                 send_udp_msg(fd, "RRC ERR\n", &addr, addrlen);
                 continue;
             }
@@ -369,7 +380,6 @@ void udp_handler() {
         }
 
         send_udp_msg(fd, res, &addr, addrlen);
-        log_connection(address, res, false, false);
     }
 
     std::cout << "Shutting down UDP worker thread..." << std::endl;
@@ -379,10 +389,48 @@ void udp_handler() {
 
 void send_udp_msg(int fd, std::string msg, sockaddr_in *addr,
                   socklen_t addrlen) {
+    char ip_str[addrlen + 1];
+    std::string address;
+
+    // Convert binary IP address to string
+    if (inet_ntop(AF_INET, &(addr->sin_addr), ip_str, addrlen) != NULL) {
+        // Convert port number to host byte order
+        int port = ntohs(addr->sin_port);
+
+        address = std::string(ip_str) + ":" + std::to_string(port);
+    } else {
+        std::cerr << "Couldn't convert IP to string" << std::endl;
+        address = "ERR";
+    }
+
     ssize_t n = sendto(fd, msg.c_str(), msg.length(), 0,
                        (struct sockaddr *)addr, addrlen);
     if (n == -1) {
-        std::cerr << "Error sending UDP message" << std::endl;
+        log_udp_msg(addr, addrlen, "Error sending UDP message\n", false);
+    } else {
+        log_udp_msg(addr, addrlen, msg, false);
+    }
+}
+
+void log_udp_msg(sockaddr_in *addr, socklen_t addrlen, const std::string &msg,
+                 bool received) {
+    if (verbose.load()) {
+        char ip_str[addrlen + 1];
+        std::string address;
+
+        // Convert binary IP address to string
+        if (inet_ntop(AF_INET, &(addr->sin_addr), ip_str, addrlen) != NULL) {
+            // Convert port number to host byte order
+            int port = ntohs(addr->sin_port);
+
+            address = std::string(ip_str) + ":" + std::to_string(port);
+        } else {
+            std::cerr << "Couldn't convert IP to string" << std::endl;
+            address = "ERR";
+        }
+
+        std::cout << "[" << address << "](UDP) "
+                  << (received ? "received: " : "sent: ") << msg << std::endl;
     }
 }
 
@@ -531,7 +579,7 @@ void handle_tcp_request(int fd, std::string address) {
 
         cmd += " " + uid + " " + password + " " + name + " " + start_value +
                " " + time_active + " " + asset_fname + " " + asset_fsize + "\n";
-        log_connection(address, cmd, true, true);
+        log_tcp_connection(address, cmd, true);
 
         if (!is_number(uid) || uid.length() != UID_SIZE ||
             !is_alphanumerical(password) ||
@@ -591,7 +639,7 @@ void handle_tcp_request(int fd, std::string address) {
 
         cmd += " " + uid + " " + password + " " + aid +
                std::string(buffer, (size_t)n);
-        log_connection(address, cmd, true, true);
+        log_tcp_connection(address, cmd, true);
 
         if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE || !is_number(uid) ||
@@ -631,7 +679,7 @@ void handle_tcp_request(int fd, std::string address) {
         std::string aid = tokens[0];
 
         cmd += " " + aid + std::string(buffer, (size_t)n);
-        log_connection(address, cmd, true, true);
+        log_tcp_connection(address, cmd, true);
 
         if (n != 1 || buffer[0] != '\n' || !is_number(aid) ||
             aid.length() != AID_SIZE) {
@@ -641,7 +689,7 @@ void handle_tcp_request(int fd, std::string address) {
 
         int status_code = db_lock(auction_send_asset, aid, fd);
         if (status_code == SUCCESS_CODE) {
-            log_connection(address, "RSA OK [...]\n", true, false);
+            log_tcp_connection(address, "RSA OK [...]\n", false);
             close(fd);
             return;
         } else {
@@ -665,7 +713,7 @@ void handle_tcp_request(int fd, std::string address) {
 
         cmd += " " + uid + " " + password + " " + aid + " " + value +
                std::string(buffer, (size_t)n);
-        log_connection(address, cmd, true, true);
+        log_tcp_connection(address, cmd, true);
 
         if (n != 1 || buffer[0] != '\n' || !is_number(uid) ||
             uid.length() != UID_SIZE || !is_alphanumerical(password) ||
@@ -697,7 +745,7 @@ void handle_tcp_request(int fd, std::string address) {
         }
     } else {
         cmd += " (unknown command)";
-        log_connection(address, cmd, true, true);
+        log_tcp_connection(address, cmd, true);
         res = ERROR_MSG;
     }
 
@@ -706,14 +754,14 @@ void handle_tcp_request(int fd, std::string address) {
 
 void terminate_tcp_conn(int fd, std::string msg, std::string address) {
     _write(fd, msg.c_str(), msg.length());
-    log_connection(address, msg, true, false);
+    log_tcp_connection(address, msg, false);
     close(fd);
 }
 
-void log_connection(const std::string &address, const std::string &cmd,
-                    bool tcp, bool received) {
+void log_tcp_connection(const std::string &address, const std::string &cmd,
+                        bool received) {
     if (verbose.load()) {
-        std::cout << "[" << address << "](" << (tcp ? "TCP" : "UDP") << ") "
+        std::cout << "[" << address << "](TCP) "
                   << (received ? "received: " : "sent: ") << cmd << std::endl;
     }
 }

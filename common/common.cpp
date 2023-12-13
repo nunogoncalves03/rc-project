@@ -114,7 +114,7 @@ bool read_tokens(std::istringstream& stream, std::vector<std::string>& tokens,
         }
     } else {
         if (stream.get() != ' ' || stream.peek() == ' ' ||
-            stream.peek() == '\n') {
+            stream.peek() == '\n' || stream.peek() == EOF) {
             return false;
         }
     }

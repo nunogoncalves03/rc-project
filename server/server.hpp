@@ -24,11 +24,14 @@
 void udp_handler();
 void send_udp_msg(int fd, std::string msg, sockaddr_in *addr,
                   socklen_t addrlen);
+void log_udp_msg(sockaddr_in *addr, socklen_t addrlen, const std::string &msg,
+                 bool received);
+
 void tcp_handler();
 void handle_tcp_request(int fd, std::string address);
 
 void terminate_tcp_conn(int fd, std::string msg, std::string address);
-void log_connection(const std::string &address, const std::string &cmd,
-                    bool tcp, bool received);
+void log_tcp_connection(const std::string &address, const std::string &cmd,
+                        bool received);
 
 #endif
