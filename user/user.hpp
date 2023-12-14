@@ -2,6 +2,7 @@
 #define _USER_H__
 
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -43,7 +44,8 @@ bool read_from_terminal(Args&&... args) {
     return rest.length() != 0;
 }
 
-std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size);
+std::optional<std::string> udp_request(int socket_fd, const std::string& msg,
+                                       size_t res_max_size);
 int send_tcp_request(std::string& msg);
 
 void handle_login_response(std::string& res, std::string& uid_,

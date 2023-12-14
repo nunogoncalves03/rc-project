@@ -134,8 +134,12 @@ int main(int argc, char** argv) {
 
             msg = "LIN " + temp_uid + " " + temp_password + "\n";
 
-            std::string res = udp_request(udp_fd, msg, LOGIN_RES_SIZE);
-            handle_login_response(res, temp_uid, temp_password);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, LOGIN_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_login_response(res.value(), temp_uid, temp_password);
         } else if (cmd == "logout") {
             const bool left_over_chars = read_from_terminal();
 
@@ -152,8 +156,12 @@ int main(int argc, char** argv) {
 
             msg = "LOU " + uid + " " + password + "\n";
 
-            std::string res = udp_request(udp_fd, msg, LOGOUT_RES_SIZE);
-            handle_logout_response(res);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, LOGOUT_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_logout_response(res.value());
         } else if (cmd == "unregister") {
             const bool left_over_chars = read_from_terminal();
 
@@ -170,8 +178,12 @@ int main(int argc, char** argv) {
 
             msg = "UNR " + uid + " " + password + "\n";
 
-            std::string res = udp_request(udp_fd, msg, UNREGISTER_RES_SIZE);
-            handle_unregister_response(res);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, UNREGISTER_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_unregister_response(res.value());
         } else if (cmd == "exit") {
             const bool left_over_chars = read_from_terminal();
 
@@ -299,8 +311,12 @@ int main(int argc, char** argv) {
 
             msg = "LMA " + uid + "\n";
 
-            std::string res = udp_request(udp_fd, msg, MYAUCTIONS_RES_SIZE);
-            handle_myauctions_response(res);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, MYAUCTIONS_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_myauctions_response(res.value());
         } else if (cmd == "mybids" || cmd == "mb") {
             const bool left_over_chars = read_from_terminal();
 
@@ -317,8 +333,12 @@ int main(int argc, char** argv) {
 
             msg = "LMB " + uid + "\n";
 
-            std::string res = udp_request(udp_fd, msg, MYBIDS_RES_SIZE);
-            handle_mybids_response(res);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, MYBIDS_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_mybids_response(res.value());
         } else if (cmd == "list" || cmd == "l") {
             const bool left_over_chars = read_from_terminal();
 
@@ -329,8 +349,12 @@ int main(int argc, char** argv) {
 
             msg = "LST\n";
 
-            std::string res = udp_request(udp_fd, msg, LIST_RES_SIZE);
-            handle_list_response(res);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, LIST_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_list_response(res.value());
         } else if (cmd == "show_asset" || cmd == "sa") {
             std::string aid;
             const bool left_over_chars = read_from_terminal(aid);
@@ -405,9 +429,17 @@ int main(int argc, char** argv) {
 
             msg = "SRC " + aid + "\n";
 
-            std::string res = udp_request(udp_fd, msg, SHOWRECORD_RES_SIZE);
-            handle_show_record_response(res);
+            std::optional<std::string> res =
+                udp_request(udp_fd, msg, SHOWRECORD_RES_SIZE);
+            if (!res.has_value()) {
+                continue;
+            }
+            handle_show_record_response(res.value());
         } else {
+            if (std::cin.eof()) {
+                break;
+            }
+
             std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
             std::cout << "unknown command" << std::endl;
         }
@@ -418,26 +450,23 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-std::string udp_request(int socket_fd, std::string& msg, size_t res_max_size) {
+std::optional<std::string> udp_request(int socket_fd, const std::string& msg,
+                                       size_t res_max_size) {
     ssize_t n = sendto(socket_fd, msg.c_str(), msg.length(), 0,
                        dns_res->ai_addr, dns_res->ai_addrlen);
     if (n == -1) {
         std::cout << "ERROR: couldn't send UDP message" << std::endl;
-        graceful_shutdown(1);
+        return std::nullopt;
     }
-
-    std::cout << "sent: " << msg;
 
     char buffer[res_max_size];
     n = recvfrom(socket_fd, buffer, res_max_size, 0, NULL, NULL);
     if (n == -1) {
         std::cout << "ERROR: couldn't receive UDP message" << std::endl;
-        graceful_shutdown(1);
+        return std::nullopt;
     }
 
     std::string res = std::string(buffer, (size_t)n);
-
-    std::cout << "received: " << res;
 
     return res;
 }
@@ -446,7 +475,7 @@ int send_tcp_request(std::string& msg) {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == -1) {
         std::cout << "ERROR: couldn't open TCP socket" << std::endl;
-        graceful_shutdown(1);
+        return -1;
     }
 
     struct timeval timeout;
@@ -457,7 +486,7 @@ int send_tcp_request(std::string& msg) {
     if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout) < 0 ||
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout) < 0) {
         std::cout << "ERROR: couldn't set TCP socket timeout" << std::endl;
-        graceful_shutdown(1);
+        return -1;
     }
 
     ssize_t n = connect(fd, dns_res->ai_addr, dns_res->ai_addrlen);
@@ -471,8 +500,6 @@ int send_tcp_request(std::string& msg) {
         std::cout << "ERROR: couldn't send TCP message" << std::endl;
         return -1;
     }
-
-    std::cout << "sent: " << msg;
 
     return fd;
 }
@@ -539,7 +566,7 @@ void handle_open_request(std::string& msg, std::string& asset_path,
     if (!asset_file.is_open()) {
         std::cout << "couldn't open file " << asset_path << std::endl;
         close(fd);
-        graceful_shutdown(1);
+        return;
     }
 
     char fdata_buffer[512];
@@ -580,7 +607,7 @@ void handle_open_request(std::string& msg, std::string& asset_path,
 
     const std::string res_status(res_status_buffer, (size_t)n);
 
-    char rest[128];
+    char rest[128] = {0};
     if (res_status == "ROA OK ") {
         std::vector<std::string> tokens;
         n = read_tokens_from_tcp_socket(fd, tokens, 1, AID_SIZE, true, rest);
@@ -601,14 +628,15 @@ void handle_open_request(std::string& msg, std::string& asset_path,
         std::cout << "auction successfully opened with ID " << aid << std::endl;
     } else {
         // read the '\n'
-        n = read_from_tcp_socket(fd, rest, sizeof(rest));
+        n = read_from_tcp_socket(fd, rest, 2);
         close(fd);
-        if (n == -1) {
+        if (n == -1 && errno != ECONNRESET) {
             std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             return;
         }
 
-        if (n != 1 || rest[0] != '\n') {
+        if ((n == 2 && strlen(rest) == 1) || strlen(rest) != 1 ||
+            rest[0] != '\n') {
             std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
@@ -861,9 +889,7 @@ void handle_show_asset_response(int fd) {
 
     std::string res = std::string(res_status_buffer, (size_t)n);
 
-    std::cout << "received: " << res;
-
-    char rest[128];
+    char rest[128] = {0};
     if (res == "RSA OK ") {
         std::vector<std::string> tokens;
         n = read_tokens_from_tcp_socket(fd, tokens, 2, MAX_FNAME_SIZE, true,
@@ -892,21 +918,19 @@ void handle_show_asset_response(int fd) {
 
         char* fdata_portion = n == 1 ? rest : rest + 1;
 
-        std::cout << fname << " " << fsize << std::endl;
-
-        if (!std::filesystem::exists("./assets/")) {
-            if (!std::filesystem::create_directory("./assets/")) {
-                std::cerr << "Error creating directory: ./assets/" << std::endl;
+        if (!std::filesystem::exists("./ASSETS/")) {
+            if (!std::filesystem::create_directory("./ASSETS/")) {
+                std::cerr << "Error creating directory: ./ASSETS/" << std::endl;
                 close(fd);
-                graceful_shutdown(1);
+                return;
             }
         }
 
-        std::ofstream asset_file("./assets/" + fname);
+        std::ofstream asset_file("./ASSETS/" + fname);
         if (!asset_file.is_open()) {
             std::cout << "couldn't create file " << fname << std::endl;
             close(fd);
-            graceful_shutdown(1);
+            return;
         }
 
         ssize_t portion_size = n - 1;
@@ -931,10 +955,9 @@ void handle_show_asset_response(int fd) {
                     close(fd);
                     asset_file.close();
 
-                    if (!std::filesystem::remove("./assets/" + fname)) {
-                        std::cerr << "Error removing file: ./assets/" << fname
+                    if (!std::filesystem::remove("./ASSETS/" + fname)) {
+                        std::cerr << "Error removing file: ./ASSETS/" << fname
                                   << std::endl;
-                        graceful_shutdown(1);
                     }
 
                     return;
@@ -950,17 +973,18 @@ void handle_show_asset_response(int fd) {
 
         close(fd);
         asset_file.close();
-        std::cout << "asset saved in ./assets/" << fname << std::endl;
+        std::cout << "asset saved in ./ASSETS/" << fname << std::endl;
     } else {
         // read the '\n'
-        n = read_from_tcp_socket(fd, rest, sizeof(rest));
+        n = read_from_tcp_socket(fd, rest, 2);
         close(fd);
-        if (n == -1) {
+        if (n == -1 && errno != ECONNRESET) {
             std::cout << "ERROR: couldn't read from TCP socket" << std::endl;
             return;
         }
 
-        if (n != 1 || rest[0] != '\n') {
+        if ((n == 2 && strlen(rest) == 1) || strlen(rest) != 1 ||
+            rest[0] != '\n') {
             std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
@@ -1033,7 +1057,7 @@ void handle_show_record_response(std::string& res) {
             std::string& token = *(tokens[i]);
             c = res_stream.peek();
             if (c == ' ' || c == '\n' || c == EOF) {
-                std::cout << "ERROR: unexpected response from server 1"
+                std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
@@ -1041,15 +1065,11 @@ void handle_show_record_response(std::string& res) {
             res_stream >> token;
 
             if (i < tokens.size() - 1 && res_stream.get() != ' ') {
-                std::cout << "ERROR: unexpected response from server 2"
+                std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
         }
-
-        std::cout << host_uid << " " << auction_name << " " << asset_fname
-                  << " " << start_value << " " << start_date << " "
-                  << start_time << " " << time_active << std::endl;
 
         if (!is_number(host_uid) || host_uid.length() != UID_SIZE ||
             !is_alphanumerical(auction_name, "-_") ||
@@ -1059,8 +1079,7 @@ void handle_show_record_response(std::string& res) {
             start_date.length() != DATE_SIZE ||
             start_time.length() != TIME_SIZE || !is_number(time_active) ||
             time_active.length() > DURATION_SIZE) {
-            std::cout << "ERROR: unexpected response from server 3"
-                      << std::endl;
+            std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
 
@@ -1076,15 +1095,13 @@ void handle_show_record_response(std::string& res) {
             std::cout << output << std::endl;
             return;
         } else if (c != ' ') {
-            std::cout << "ERROR: unexpected response from server 4"
-                      << std::endl;
+            std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
 
         c = res_stream.get();
         if (c != 'B' && c != 'E') {
-            std::cout << "ERROR: unexpected response from server 5"
-                      << std::endl;
+            std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
 
@@ -1101,7 +1118,7 @@ void handle_show_record_response(std::string& res) {
                 c = res_stream.get();
                 if (c != ' ' || res_stream.peek() == ' ' ||
                     res_stream.peek() == '\n' || res_stream.peek() == EOF) {
-                    std::cout << "ERROR: unexpected response from server 6"
+                    std::cout << "ERROR: unexpected response from server"
                               << std::endl;
                     return;
                 }
@@ -1113,7 +1130,7 @@ void handle_show_record_response(std::string& res) {
                 bid_date.length() != DATE_SIZE ||
                 bid_time.length() != TIME_SIZE || !is_number(bid_sec_time) ||
                 bid_sec_time.length() > DURATION_SIZE) {
-                std::cout << "ERROR: unexpected response from server 7"
+                std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
@@ -1126,7 +1143,7 @@ void handle_show_record_response(std::string& res) {
             if (c == ' ') {
                 c = res_stream.get();
                 if (c != 'B' && c != 'E') {
-                    std::cout << "ERROR: unexpected response from server 8"
+                    std::cout << "ERROR: unexpected response from server"
                               << std::endl;
                     return;
                 }
@@ -1135,7 +1152,7 @@ void handle_show_record_response(std::string& res) {
                 std::cout << output << std::endl;
                 return;
             } else {
-                std::cout << "ERROR: unexpected response from server 9"
+                std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
@@ -1150,7 +1167,7 @@ void handle_show_record_response(std::string& res) {
                 c = res_stream.get();
                 if (c != ' ' || res_stream.peek() == ' ' ||
                     res_stream.peek() == '\n' || res_stream.peek() == EOF) {
-                    std::cout << "ERROR: unexpected response from server 10"
+                    std::cout << "ERROR: unexpected response from server"
                               << std::endl;
                     return;
                 }
@@ -1160,7 +1177,7 @@ void handle_show_record_response(std::string& res) {
             if (end_date.length() != DATE_SIZE ||
                 end_time.length() != TIME_SIZE || !is_number(end_sec_time) ||
                 end_sec_time.length() > DURATION_SIZE) {
-                std::cout << "ERROR: unexpected response from server 11"
+                std::cout << "ERROR: unexpected response from server"
                           << std::endl;
                 return;
             }
@@ -1172,14 +1189,13 @@ void handle_show_record_response(std::string& res) {
                 output.pop_back();
                 std::cout << output << std::endl;
             } else {
-                std::cout << "ERROR: unexpected response from server 12"
+                std::cout << "ERROR: unexpected response from server"
                           << std::endl;
             }
         }
     } else {
         if (res_stream.get() != '\n' || res_stream.peek() != EOF) {
-            std::cout << "ERROR: unexpected response from server 13"
-                      << std::endl;
+            std::cout << "ERROR: unexpected response from server" << std::endl;
             return;
         }
 
@@ -1188,8 +1204,7 @@ void handle_show_record_response(std::string& res) {
         } else if (cmd_status == "RRC ERR") {
             std::cout << "ERR: unable to show the record" << std::endl;
         } else {
-            std::cout << "ERROR: unexpected response from server 14"
-                      << std::endl;
+            std::cout << "ERROR: unexpected response from server" << std::endl;
         }
     }
 }

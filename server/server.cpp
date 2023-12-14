@@ -132,8 +132,6 @@ void udp_handler() {
                      &addrlen);
         if (n == -1) {
             if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                // std::cout << "UDP timeout occurred while receiving data"
-                //           << std::endl;
                 continue;
             } else {
                 std::cerr << "Error receiving data: " << strerror(errno)
@@ -179,7 +177,7 @@ void udp_handler() {
             if (status_code == SUCCESS_CODE) {
                 res = "RLI REG\n";
                 if (db_lock(user_login, uid, password) != SUCCESS_CODE) {
-                    res = "RLI NOK\n";  // FIXME
+                    res = "RLI NOK\n";
                 }
             } else if (status_code == ERR_USER_ALREADY_EXISTS) {
                 status_code = db_lock(user_login, uid, password);
@@ -189,10 +187,10 @@ void udp_handler() {
                 } else if (status_code == ERR_USER_INVALID_PASSWORD) {
                     res = "RLI NOK\n";
                 } else {
-                    res = "RLI NOK\n";  // FIXME
+                    res = "RLI NOK\n";
                 }
             } else {
-                res = "RLI NOK\n";  // FIXME
+                res = "RLI NOK\n";
             }
         } else if (cmd == "LOU") {
             if (!read_tokens(req_stream, tokens, 2, true)) {
@@ -218,7 +216,7 @@ void udp_handler() {
             } else if (status_code == ERR_USER_DOESNT_EXIST) {
                 res = "RLO UNR\n";
             } else {
-                res = "RLO NOK\n";  // FIXME
+                res = "RLO NOK\n";
             }
         } else if (cmd == "UNR") {
             if (!read_tokens(req_stream, tokens, 2, true)) {
@@ -244,7 +242,7 @@ void udp_handler() {
             } else if (status_code == ERR_USER_DOESNT_EXIST) {
                 res = "RUR UNR\n";
             } else {
-                res = "RUR NOK\n";  // FIXME
+                res = "RUR NOK\n";
             }
         } else if (cmd == "LMA") {
             if (!read_tokens(req_stream, tokens, 1, true)) {
@@ -276,7 +274,7 @@ void udp_handler() {
                        status_code == ERR_USER_DOESNT_EXIST) {
                 res = "RMA NLG\n";
             } else {
-                res = "RMA NOK\n";  // FIXME
+                res = "RMA NOK\n";
             }
         } else if (cmd == "LMB") {
             if (!read_tokens(req_stream, tokens, 1, true)) {
@@ -308,7 +306,7 @@ void udp_handler() {
                        status_code == ERR_USER_DOESNT_EXIST) {
                 res = "RMB NLG\n";
             } else {
-                res = "RMB NOK\n";  // FIXME
+                res = "RMB NOK\n";
             }
         } else if (cmd == "LST") {
             if (req != "LST\n") {
@@ -330,7 +328,7 @@ void udp_handler() {
                     res += "\n";
                 }
             } else {
-                res = "RLS NOK\n";  // FIXME
+                res = "RLS NOK\n";
             }
         } else if (cmd == "SRC") {
             if (!read_tokens(req_stream, tokens, 1, true)) {
@@ -368,12 +366,12 @@ void udp_handler() {
                     }
                     res += "\n";
                 } else {
-                    res = "RRC NOK\n";  // FIXME
+                    res = "RRC NOK\n";
                 }
             } else if (status_code == ERR_AUCTION_DOESNT_EXIST) {
                 res = "RRC NOK\n";
             } else {
-                res = "RRC NOK\n";  // FIXME
+                res = "RRC NOK\n";
             }
         } else {
             res = ERROR_MSG;
@@ -475,7 +473,7 @@ void tcp_handler() {
     }
 
     // 5 connection requests will be queued before further requests are refused
-    if (listen(fd, 5) == -1) {  // FIXME
+    if (listen(fd, 5) == -1) {
         std::cerr << "Couldn't listen on TCP socket" << std::endl;
         exit(1);
     }
@@ -487,9 +485,6 @@ void tcp_handler() {
         int new_fd;
         if ((new_fd = accept(fd, (struct sockaddr *)&addr, &addrlen)) == -1) {
             if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                // std::cout
-                //     << "TCP timeout occurred while waiting for connections"
-                //     << std::endl;
                 continue;
             } else {
                 std::cerr << "Error receiving data: " << strerror(errno)
@@ -514,6 +509,7 @@ void tcp_handler() {
         threads.push_back(std::thread(handle_tcp_request, new_fd, address));
     }
 
+    std::cout << "Shutting down TCP worker threads..." << std::endl;
     for (std::thread &t : threads) {
         t.join();
     }
@@ -611,7 +607,7 @@ void handle_tcp_request(int fd, std::string address) {
                 res = "ROA OK " + aid + "\n";
             } else {
                 auction_remove(aid);
-                res = "ROA NOK\n";  // FIXME
+                res = "ROA NOK\n";
             }
         } else if (status_code == ERR_AUCTION_LIMIT_REACHED) {
             res = "ROA NOK\n";
@@ -620,7 +616,7 @@ void handle_tcp_request(int fd, std::string address) {
                    status_code == ERR_USER_INVALID_PASSWORD) {
             res = "ROA NLG\n";
         } else {
-            res = "ROA NOK\n";  // FIXME
+            res = "ROA NOK\n";
         }
     } else if (cmd == "CLS") {
         char buffer[128];
@@ -664,7 +660,7 @@ void handle_tcp_request(int fd, std::string address) {
         } else if (status_code == ERR_AUCTION_ALREADY_CLOSED) {
             res = "RCL END\n";
         } else {
-            res = "RCL NOK\n";  // FIXME
+            res = "RCL NOK\n";
         }
     } else if (cmd == "SAS") {
         char buffer[128];
@@ -738,10 +734,8 @@ void handle_tcp_request(int fd, std::string address) {
             res = "RBD REF\n";
         } else if (status_code == ERR_BID_OWN_AUCTION) {
             res = "RBD ILG\n";
-        } else if (status_code == ERR_AUCTION_DOESNT_EXIST) {
-            res = "RBD NOK\n";  // FIXME
         } else {
-            res = "RBD NOK\n";  // FIXME
+            res = "RBD NOK\n";
         }
     } else {
         cmd += " (unknown command)";
