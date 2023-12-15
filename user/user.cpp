@@ -545,7 +545,7 @@ void handle_unregister_response(std::string& res) {
         std::cout << "successful unregister" << std::endl;
         logged_in = false;
     } else if (res == "RUR NOK\n") {
-        std::cout << "incorrect unregister attempt" << std::endl;
+        std::cout << "user not logged in" << std::endl;
     } else if (res == "RUR UNR\n") {
         std::cout << "unknown user" << std::endl;
     } else if (res == "RUR ERR\n") {
@@ -682,6 +682,8 @@ void handle_close_response(int fd) {
         std::cout << "auction is already closed" << std::endl;
     } else if (status == "NLG") {
         std::cout << "user not logged in" << std::endl;
+    } else if (status == "NOK") {
+        std::cout << "invalid user credentials" << std::endl;
     } else if (status == "ERR") {
         std::cout << "ERR: unable to close the auction" << std::endl;
     } else {
