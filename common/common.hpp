@@ -36,5 +36,6 @@ ssize_t read_tokens_from_tcp_socket(int fd, std::vector<std::string>& tokens,
                                     int n_tokens, size_t max_token_size,
                                     bool read_token, char rest[128]);
 ssize_t _write(int fd, const void* buf, size_t count);
+ssize_t write_to_tcp_socket(int fd, const char* buf, size_t count);
 
 #endif

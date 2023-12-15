@@ -542,7 +542,7 @@ int auction_send_asset(std::string aid, int socket_fd) {
     const std::string res = "RSA OK " + auction.asset_fname + " " +
                             std::to_string(auction.asset_fsize) + " ";
 
-    ssize_t n = _write(socket_fd, res.c_str(), res.length());
+    ssize_t n = write_to_tcp_socket(socket_fd, res.c_str(), res.length());
     if (n == -1) {
         std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
         return ERROR_CODE;
@@ -555,14 +555,14 @@ int auction_send_asset(std::string aid, int socket_fd) {
         asset_file.read(fdata_buffer, n_to_write);
         nleft -= n_to_write;
 
-        n = _write(socket_fd, fdata_buffer, (size_t)n_to_write);
+        n = write_to_tcp_socket(socket_fd, fdata_buffer, (size_t)n_to_write);
         if (n == -1) {
             std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
             return ERROR_CODE;
         }
     }
 
-    n = _write(socket_fd, "\n", 1);
+    n = write_to_tcp_socket(socket_fd, "\n", 1);
     if (n == -1) {
         std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
         return ERROR_CODE;

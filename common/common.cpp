@@ -221,3 +221,18 @@ ssize_t _write(int fd, const void* buf, size_t count) {
     } while (bytes_written < 0 && errno == EINTR);
     return bytes_written;
 }
+
+ssize_t write_to_tcp_socket(int fd, const char* buf, size_t count) {
+    ssize_t n;
+    size_t nleft = count;
+    while (nleft > 0) {
+        n = _write(fd, buf + (count - nleft), nleft);
+        if (n == -1) {
+            return -1;
+        }
+
+        nleft -= (size_t)n;
+    }
+
+    return (ssize_t)(count - nleft);
+}

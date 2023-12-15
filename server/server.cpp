@@ -606,7 +606,7 @@ void handle_tcp_request(int fd, std::string address) {
             if (status_code == SUCCESS_CODE) {
                 res = "ROA OK " + aid + "\n";
             } else {
-                auction_remove(aid);
+                db_lock(auction_remove, aid);
                 res = "ROA NOK\n";
             }
         } else if (status_code == ERR_AUCTION_LIMIT_REACHED) {
@@ -747,7 +747,7 @@ void handle_tcp_request(int fd, std::string address) {
 }
 
 void terminate_tcp_conn(int fd, std::string msg, std::string address) {
-    _write(fd, msg.c_str(), msg.length());
+    write_to_tcp_socket(fd, msg.c_str(), msg.length());
     log_tcp_connection(address, msg, false);
     close(fd);
 }

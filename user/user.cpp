@@ -495,7 +495,7 @@ int send_tcp_request(std::string& msg) {
         return -1;
     }
 
-    n = _write(fd, msg.c_str(), msg.length());
+    n = write_to_tcp_socket(fd, msg.c_str(), msg.length());
     if (n == -1) {
         std::cout << "ERROR: couldn't send TCP message" << std::endl;
         return -1;
@@ -577,7 +577,7 @@ void handle_open_request(std::string& msg, std::string& asset_path,
         asset_file.read(fdata_buffer, n_to_write);
         nleft -= n_to_write;
 
-        n = _write(fd, fdata_buffer, (size_t)n_to_write);
+        n = write_to_tcp_socket(fd, fdata_buffer, (size_t)n_to_write);
         if (n == -1) {
             // Server parsed the "header" part of the request and already sent a
             // response, closing the socket before the whole fdata arrived
@@ -590,7 +590,7 @@ void handle_open_request(std::string& msg, std::string& asset_path,
         }
     }
 
-    n = _write(fd, "\n", 1);
+    n = write_to_tcp_socket(fd, "\n", 1);
     if (n == -1 && errno != EPIPE && errno != ECONNRESET) {
         std::cout << "ERROR: couldn't write to TCP socket" << std::endl;
         close(fd);
